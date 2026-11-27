@@ -53,6 +53,11 @@
 - Kombinációk: két akadály együtt nehezebb lehet, mint külön (pl. keskeny + lejtő). Kell egy szabály, hogy mi kerülhet egymás mellé.
 - Minden generált útvesztőt a robotpilóta végigjár, mielőtt a játékos megkapja. Ha a helyes úton nem jut végig, a pálya eldobható.
 - Sorrend: előbb egy kézzel épített próba-útvesztő, utána a generátor.
+- **3 nehézségi szint:** könnyű, közepes, nehéz.
+- **Fokozatos bevezetés:** a játék elején nincs elsütve minden akadályfajta. Ahogy haladunk, úgy jönnek az újak.
+  - Egy új akadályfajta először könnyű változatban, biztonságos helyen jelenik meg (megismerés),
+  - aztán önállóan, nehezebben (gyakorlás),
+  - és csak utána keveredik a többivel (kombináció).
 
 ## Térbeli mozgás (ötlet)
 - **Spirál lefelé, fallal:** a motor már tud bármilyen irányú, lejtő darabokat. Kell hozzá a "falas oldal" (a golyó visszapattan).
