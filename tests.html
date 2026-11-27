@@ -216,7 +216,7 @@ function step(dt){
   st.hx=Math.asin(Math.max(-1,Math.min(1,Math.cos(B*dg)*Math.sin(Gm*dg))))/dg;   // true sideways lean, stays sane even when the phone is rolled far over
   st.hy=B;
   const MAXT=SENS[st.sens], wx=curve(st.hx,MAXT), wy=curve(st.hy,MAXT);
-  const a=1-Math.exp(-dt/0.10); st.tx+=(wx-st.tx)*a; st.ty+=(wy-st.ty)*a;
+  const a=1-Math.exp(-dt/0.03); st.tx+=(wx-st.tx)*a; st.ty+=(wy-st.ty)*a;
   const b=st.ball, d=Math.PI/180;
   if(!st.ready){ const lvl=Math.hypot(st.hx,st.hy); st.levelT=lvl<4?st.levelT+dt:0; if(st.levelT>=1){ st.ready=true; flash('GO'); } }
   else if(b.dead){ b.t+=dt; b.vz-=GRAV*dt; b.z+=b.vz*dt; b.x+=b.vx*dt; b.y+=b.vy*dt; if(b.t>0.9) respawn(); }
@@ -311,7 +311,7 @@ function draw(){
     cx.fillStyle='rgba(120,220,150,.9)'; cx.beginPath(); cx.arc(lx-mx*rad*0.85, ly-my*rad*0.85, 9,0,7); cx.fill(); cx.lineWidth=1; }
   cx.textAlign='left';
   const stale=performance.now()-st.lastHeard>1500;
-  $('hud').textContent=(stale?'⚠ no data from the phone\n':'')+'build     5\n'+TR.name+'\n'+'done      '+st.wins+'\n'+'falls     '+st.falls+'\n'+
+  $('hud').textContent=(stale?'⚠ no data from the phone\n':'')+'build     6\n'+TR.name+'\n'+'done      '+st.wins+'\n'+'falls     '+st.falls+'\n'+
     (TR.kind==='HOP'?'hops      '+st.jumps+'\n':'')+'time      '+st.run.toFixed(1)+' s\n'+'link      '+(path==='direct'?'direct':'relay')+' · '+st.rate.toFixed(0)+'/s';
 }
 
@@ -328,8 +328,8 @@ async function joinPhone(){
     else if(a===270){ [b,g]=[e.gamma,-e.beta]; }   // landscape, top of the phone to the right
     else if(a===180){ [b,g]=[-e.beta,-e.gamma]; }
     ph.ori={b,g,a}; });
-  setInterval(()=>{ if(!ph.linked || !ph.ori) return; const now=performance.now(); if(now-ph.last<33) return;
-    ph.last=Math.max(ph.last+33,now-33);                                                         // steady ~30 per second
+  setInterval(()=>{ if(!ph.linked || !ph.ori) return; const now=performance.now(); if(now-ph.last<16) return;
+    ph.last=Math.max(ph.last+16,now-16);                                                         // steady ~60 per second
     send({t:'o',s:ph.seq++,b:+ph.ori.b.toFixed(2),g:+ph.ori.g.toFixed(2),a:ph.ori.a}); },8);
   try{ if(typeof DeviceMotionEvent!=='undefined' && DeviceMotionEvent.requestPermission) await DeviceMotionEvent.requestPermission(); }catch(e){}
   // flick: a quick upward jerk of the phone (perpendicular to its screen) = hop
