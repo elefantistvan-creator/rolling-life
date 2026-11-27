@@ -132,7 +132,7 @@ async function checkPath(){   // host = same local network, srflx/prflx = throug
 const SENS=[0,46,53,60,68,76];             // max tray tilt (deg) reached at a 60° hand tilt, per sensitivity level
 // hand -> tray: a curve, not a straight line: small hand moves stay fine, big ones bite hard
 // grip 1..5: 1 = free rolling (speed keeps building), 5 = the ball's speed follows the tilt closely; small tilts also count more
-const GRIP_DAMP=[1,1.7,2.6,3.8,5.2], GRIP_EXP=[1.4,1.3,1.2,1.1,1.0];
+const GRIP_DAMP=[1,1.7,2.6,3.8,5.2], GRIP_EXP=[1.4,1.3,1.2,1.1,1.0], POWER=[0.4,0.55,0.7,0.85,1.0];   // power 1..5: how hard the tilt pushes (5 = as before)
 function curve(h,max){ const a=Math.min(1,Math.abs(h)/60); return Math.sign(h)*max*Math.pow(a,GRIP_EXP[(st.grip||1)-1]); }
 const R=1.6, G=981*5/7, GRAV=981;
 // test knobs (1–5), clickable on the screen
@@ -306,7 +306,7 @@ function floorAt(x,y){ let best=null;
     const h=p.h0+(p.h1-p.h0)*t, rel=(p.joint?1.5:0)+Math.abs(q)/(w/2);                 // same height: prefer the piece whose middle is closest (corner plates last)
     if(!best || h>best.h+0.01 || (Math.abs(h-best.h)<=0.01 && rel<best.rel)){ const sl=(p.h1-p.h0)/p.len; best={h,gx:p.ux*sl,gy:p.uy*sl,p,q,half:w/2,rel}; } }
   return best; }
-let st={grip:1,linked:false,lastHeard:0,lastSeq:-1,b:0,g:0,b0:0,g0:0,tx:0,ty:0,sens:3,rampLv:3,hopLv:3,assist:0,mat:'wood',ready:false,levelT:0,menu:true,
+let st={grip:1,power:5,linked:false,lastHeard:0,lastSeq:-1,b:0,g:0,b0:0,g0:0,tx:0,ty:0,sens:3,rampLv:3,hopLv:3,assist:0,mat:'wood',ready:false,levelT:0,menu:true,
         ball:{x:0,y:20,z:R,vx:0,vy:0,vz:0,air:false,dead:false,t:0},falls:0,wins:0,run:0,done:false,
         camX:0,camY:0,msgs:0,rate:0,rateT:0,jumps:0,spots:[[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]]};
 function startScreen(){
@@ -337,7 +337,7 @@ function openMenu(){ st.menu=true; const m=$('menu'); m.innerHTML='<h2>Test trac
     c.appendChild(cv2); const n=document.createElement('div'); n.className='nm'; n.textContent=t.name; c.appendChild(n);
     c.onclick=()=>loadTrack(i); g.appendChild(c); });
   m.classList.remove('hidden'); $('back').classList.add('hidden'); $('knobs').classList.add('hidden'); }
-function knobs(){ const k=$('knobs'); const rows=[['Sensitivity','sens'],['Grip','grip'],['Steering assist','assist'],['Ramp boost','rampLv'],['Hop length','hopLv']];
+function knobs(){ const k=$('knobs'); const rows=[['Sensitivity','sens'],['Grip','grip'],['Power','power'],['Steering assist','assist'],['Ramp boost','rampLv'],['Hop length','hopLv']];
   k.innerHTML='<div class="row"><b>Sound</b>'+[[1,'On'],[0,'Off']].map(([v,n])=>'<span style="width:auto;padding:5px 10px" data-s="'+v+'" class="'+((SND.on?1:0)===v?'on':'')+'">'+n+'</span>').join('')+'</div><div class="row"><b>Camera</b>'+[['turn','Turns'],['fixed','Fixed']].map(([v,n])=>'<span style="width:auto;padding:5px 10px" data-c="'+v+'" class="'+((st.camMode||'turn')===v?'on':'')+'">'+n+'</span>').join('')+'</div><div class="row"><b>Ball</b>'+Object.keys(MATS).map(m=>'<span style="width:auto;padding:5px 10px" data-m="'+m+'" class="'+(st.mat===m?'on':'')+'">'+MATS[m].name+'</span>').join('')+'</div>'+rows.map(([n,key])=>'<div class="row"><b>'+n+'</b>'+(key==='assist'?[0,1,2,3,4,5,6]:[1,2,3,4,5]).map(v=>'<span data-k="'+key+'" data-v="'+v+'" class="'+(st[key]===v?'on':'')+'">'+v+'</span>').join('')+'</div>').join('');
   k.querySelectorAll('span[data-s]').forEach(e=>e.onclick=()=>{ SND.setOn(e.dataset.s==='1'); try{ localStorage.setItem('rl_snd',e.dataset.s); }catch(x){} knobs(); });
   k.querySelectorAll('span[data-c]').forEach(e=>e.onclick=()=>{ st.camMode=e.dataset.c; try{ localStorage.setItem('rl_cam',st.camMode); }catch(x){} if(st.camMode==='fixed'){ st.camA=st.camT=st.ctrlA=0; } knobs(); });
@@ -345,7 +345,7 @@ function knobs(){ const k=$('knobs'); const rows=[['Sensitivity','sens'],['Grip'
   k.querySelectorAll('span[data-k]').forEach(e=>e.onclick=()=>{ st[e.dataset.k]=+e.dataset.v; try{ localStorage.setItem('rl_'+e.dataset.k,e.dataset.v); }catch(x){} knobs(); }); }
 try{ if(localStorage.getItem('rl_snd')==='0') SND.on=false; }catch(e){}
 try{ const cm=localStorage.getItem('rl_cam'); if(cm==='fixed'||cm==='turn') st.camMode=cm; }catch(e){}
-try{ const mm=localStorage.getItem('rl_mat'); if(MATS[mm]) st.mat=mm; ['sens','grip','rampLv','hopLv','assist'].forEach(k=>{ const r=localStorage.getItem('rl_'+k); const v=+r; if(r!==null && v>=(k==='assist'?0:1) && v<=(k==='assist'?6:5)) st[k]=v; }); }catch(e){}
+try{ const mm=localStorage.getItem('rl_mat'); if(MATS[mm]) st.mat=mm; ['sens','grip','power','rampLv','hopLv','assist'].forEach(k=>{ const r=localStorage.getItem('rl_'+k); const v=+r; if(r!==null && v>=(k==='assist'?0:1) && v<=(k==='assist'?6:5)) st[k]=v; }); }catch(e){}
 function loadTrack(i){ SND.start(); TR=TRACKS[i]; pickLand(); st.menu=false; st.falls=0; st.wins=0; $('menu').classList.add('hidden'); $('back').classList.remove('hidden'); $('knobs').classList.toggle('hidden',false); knobs(); st.run=0; startSection(); }
 $('back').onclick=openMenu;
 addEventListener('keydown',e=>{ const n=+e.key; if(n>=1&&n<=5){ st.sens=n; flash('sensitivity '+n); knobs(); } if((e.key==='m'||e.key==='M'||e.key==='Escape') && st.linked) openMenu();
@@ -422,7 +422,7 @@ function step(dt){
     if(!b.air){
       const f=floorAt(b.x,b.y);
       const M=MATS[st.mat];
-      const fx=Math.sin(st.ctrlA||0), fy=Math.cos(st.ctrlA||0), gk=Math.sqrt(GRIP_DAMP[(st.grip||1)-1]), sideA=G*M.acc*gk*Math.sin(st.tx*d), fwdA=-G*M.acc*gk*Math.sin(st.ty*d);   // tilt works the way the screen looks
+      const fx=Math.sin(st.ctrlA||0), fy=Math.cos(st.ctrlA||0), gk=Math.sqrt(GRIP_DAMP[(st.grip||1)-1])*POWER[(st.power||5)-1], sideA=G*M.acc*gk*Math.sin(st.tx*d), fwdA=-G*M.acc*gk*Math.sin(st.ty*d);   // tilt works the way the screen looks
       b.vx+=(fy*sideA+fx*fwdA)*dt; b.vy+=(-fx*sideA+fy*fwdA)*dt;
       if(f && (f.gx||f.gy)){ const up=(b.vx*f.gx+b.vy*f.gy)>0, lf=(up && TR.kind==='RAMP')?RAMP_LOSS[st.rampLv-1]:1;   // the slope pulls downhill
         b.vx-=G*f.gx*lf*dt; b.vy-=G*f.gy*lf*dt; }
@@ -796,7 +796,7 @@ function drawOverlay(){ const b=st.ball;
   drawMap();
   cx.textAlign='left';
   const stale=performance.now()-st.lastHeard>1500;
-  $('hud').textContent=(stale?'⚠ no data from the phone\n':'')+'build     20\n'+TR.name+'\n'+'land      '+st.land+' · mood '+(st.mood||0).toFixed(2)+'  (L / K)\n'+'done      '+st.wins+'\n'+'falls     '+st.falls+'\n'+(TR.kind==='MAZE'?'lives     '+st.lives+'  (R = reset, test)\n':'')+
+  $('hud').textContent=(stale?'⚠ no data from the phone\n':'')+'build     21\n'+TR.name+'\n'+'land      '+st.land+' · mood '+(st.mood||0).toFixed(2)+'  (L / K)\n'+'done      '+st.wins+'\n'+'falls     '+st.falls+'\n'+(TR.kind==='MAZE'?'lives     '+st.lives+'  (R = reset, test)\n':'')+
     (TR.kind==='HOP'?'hops      '+st.jumps+'\n':'')+'time      '+st.run.toFixed(1)+' s\n'+'link      '+(path==='direct'?'direct':'relay')+' · '+st.rate.toFixed(0)+'/s';
 }
 
