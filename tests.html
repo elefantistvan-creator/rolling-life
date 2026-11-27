@@ -129,7 +129,9 @@ async function checkPath(){   // host = same local network, srflx/prflx = throug
 
 
 // ================= SCREEN =================
-const SENS=[0,0.08,0.15,0.25,0.35,0.5];
+const SENS=[0,12,18,24,30,38];             // max tray tilt (deg) reached at a 60° hand tilt, per sensitivity level
+// hand -> tray: a curve, not a straight line: small hand moves stay fine, big ones bite hard
+function curve(h,max){ const a=Math.min(1,Math.abs(h)/60); return Math.sign(h)*max*Math.pow(a,1.6); }
 const R=1.6, G=981*5/7, GRAV=981;
 // test knobs (1–5), clickable on the screen
 const RAMP_LOSS=[1,0.6,0.35,0.15,0];      // how much the ramp slope slows the ball (1 = real physics, 0 = not at all)
@@ -155,7 +157,7 @@ let TR=TRACKS[0];
 function segAt(y){ for(const s of TR.S){ if(y>=s.y0 && y<s.y1) return s; } return null; }
 function floorAt(x,y){ const s=segAt(y); if(!s || s.t==='g') return null; const t=(y-s.y0)/(s.y1-s.y0);
   const w=s.w+(s.w1-s.w)*t, h=s.h0+(s.h1-s.h0)*t; if(Math.abs(x-s.x)>w/2) return null; return {h, slope:(s.h1-s.h0)/(s.y1-s.y0), s}; }
-let st={linked:false,lastHeard:0,lastSeq:-1,b:0,g:0,b0:0,g0:0,tx:0,ty:0,sens:2,rampLv:3,hopLv:3,mat:'wood',ready:false,levelT:0,menu:true,
+let st={linked:false,lastHeard:0,lastSeq:-1,b:0,g:0,b0:0,g0:0,tx:0,ty:0,sens:3,rampLv:3,hopLv:3,mat:'wood',ready:false,levelT:0,menu:true,
         ball:{x:0,y:20,z:R,vx:0,vy:0,vz:0,air:false,dead:false,t:0},falls:0,wins:0,run:0,done:false,
         camX:0,camY:0,msgs:0,rate:0,rateT:0,jumps:0,spots:[[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]]};
 function startScreen(){
@@ -210,11 +212,13 @@ function respawn(){ const b=st.ball; b.x=0; b.y=20; b.z=R; b.vx=0;b.vy=0;b.vz=0;
   st.ready=false; st.levelT=0; st.run=0; st.done=false; st.camX=0; st.camY=20; st.camZ=0; }
 function hop(){ const b=st.ball; if(!st.ready || b.air || b.dead || st.done) return; b.air=true; b.vz=HOP_UP[st.hopLv-1]; b.vx*=HOP_FWD[st.hopLv-1]; b.vy*=HOP_FWD[st.hopLv-1]; st.jumps++; }
 function step(dt){
-  const GAIN=SENS[st.sens];
-  const wx=Math.max(-12,Math.min(12,(st.g-st.g0)*GAIN)), wy=Math.max(-12,Math.min(12,(st.b-st.b0)*GAIN));
+  const dg=Math.PI/180, B=Math.max(-85,Math.min(85,st.b-st.b0)), Gm=st.g-st.g0;
+  st.hx=Math.asin(Math.max(-1,Math.min(1,Math.cos(B*dg)*Math.sin(Gm*dg))))/dg;   // true sideways lean, stays sane even when the phone is rolled far over
+  st.hy=B;
+  const MAXT=SENS[st.sens], wx=curve(st.hx,MAXT), wy=curve(st.hy,MAXT);
   const a=1-Math.exp(-dt/0.10); st.tx+=(wx-st.tx)*a; st.ty+=(wy-st.ty)*a;
   const b=st.ball, d=Math.PI/180;
-  if(!st.ready){ const lvl=Math.hypot(st.tx,st.ty)/GAIN; st.levelT=lvl<4?st.levelT+dt:0; if(st.levelT>=1){ st.ready=true; flash('GO'); } }
+  if(!st.ready){ const lvl=Math.hypot(st.hx,st.hy); st.levelT=lvl<4?st.levelT+dt:0; if(st.levelT>=1){ st.ready=true; flash('GO'); } }
   else if(b.dead){ b.t+=dt; b.vz-=GRAV*dt; b.z+=b.vz*dt; b.x+=b.vx*dt; b.y+=b.vy*dt; if(b.t>0.9) respawn(); }
   else if(!st.done){
     st.run+=dt;
@@ -299,15 +303,15 @@ function draw(){
     st.spots.forEach((sp,i)=>{ const f=sp[0]*vd[0]+sp[1]*vd[1]+sp[2]*vd[2]; if(f<0.15) return; const m=P(b.x+sp[0]*R*0.98,b.y+sp[1]*R*0.98,b.z+sp[2]*R*0.98);
       cx.fillStyle=MATS[st.mat].dot+(i<2?f:f*0.7)+')'; cx.beginPath(); cx.arc(m[0],m[1],rr*0.22*f,0,7); cx.fill(); }); }
   cx.textAlign='center';
-  if(!st.ready && !b.dead){ const lvl=Math.hypot(st.tx,st.ty)/SENS[st.sens]; cx.font='bold 30px system-ui'; cx.fillStyle=lvl<4?'#6ad18a':'#e8ecf5';
+  if(!st.ready && !b.dead){ const lvl=Math.hypot(st.hx||0,st.hy||0); cx.font='bold 30px system-ui'; cx.fillStyle=lvl<4?'#6ad18a':'#e8ecf5';
     cx.fillText(lvl<4?'hold it…':'Hold the phone level  ('+lvl.toFixed(0)+'°)', W/2, H*0.14); if(lvl<4){ cx.fillStyle='#6ad18a'; cx.fillRect(W/2-100,H*0.14+16,200*Math.min(1,st.levelT),6); } }
   else if(TR.kind==='HOP' && st.ready && !st.done){ cx.font='16px system-ui'; cx.fillStyle='#9cc4ff'; cx.fillText('flick the phone up to hop', W/2, H*0.1); }
-  { const lx=W-90, ly=H-90, rad=60, mx=Math.max(-1,Math.min(1,st.tx/12)), my=Math.max(-1,Math.min(1,st.ty/12));
+  { const lx=W-90, ly=H-90, rad=60, mx=Math.max(-1,Math.min(1,st.tx/SENS[st.sens])), my=Math.max(-1,Math.min(1,st.ty/SENS[st.sens]));
     cx.strokeStyle='rgba(200,210,230,.5)'; cx.lineWidth=2; cx.beginPath(); cx.arc(lx,ly,rad,0,7); cx.stroke(); cx.beginPath(); cx.arc(lx,ly,rad*0.33,0,7); cx.stroke();
     cx.fillStyle='rgba(120,220,150,.9)'; cx.beginPath(); cx.arc(lx-mx*rad*0.85, ly-my*rad*0.85, 9,0,7); cx.fill(); cx.lineWidth=1; }
   cx.textAlign='left';
   const stale=performance.now()-st.lastHeard>1500;
-  $('hud').textContent=(stale?'⚠ no data from the phone\n':'')+'build     3\n'+TR.name+'\n'+'done      '+st.wins+'\n'+'falls     '+st.falls+'\n'+
+  $('hud').textContent=(stale?'⚠ no data from the phone\n':'')+'build     4\n'+TR.name+'\n'+'done      '+st.wins+'\n'+'falls     '+st.falls+'\n'+
     (TR.kind==='HOP'?'hops      '+st.jumps+'\n':'')+'time      '+st.run.toFixed(1)+' s\n'+'link      '+(path==='direct'?'direct':'relay')+' · '+st.rate.toFixed(0)+'/s';
 }
 
