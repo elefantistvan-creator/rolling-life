@@ -46,6 +46,21 @@
 - Utána a játékos elindulhat a másik, helyes úton.
 - Megjegyzés: visszafelé ugyanaz az akadály más próba (a lejtőből emelkedő lesz, a kanyar a másik irányba fordul). Érdemes aszimmetrikus akadályokat tenni a zsákutcákba, hogy a visszaút ne csak ismétlés legyen.
 
+## Golyók és felületek (ötlet, 2026-11-27)
+Golyók: **fa** (alap), **fém/vas**, **papír**, **üveg**.
+Felületek, körülmények: **beton** (alap), **homok**, **víz**, **szél**.
+
+| | Beton | Homok | Víz | Szél |
+|---|---|---|---|---|
+| **Fa** | alap | lassít, de járható | (?) | kicsit sodorja |
+| **Vas** | nehezen fordul, sokáig gurul | nagyon nehéz, belesüpped | lehetetlen, csak vékony pallón át | nem hat rá |
+| **Papír** | könnyű, ugrál | átszalad rajta | könnyű | nagyon nehéz, elfújja |
+| **Üveg** | törékeny: nagy ütésre, esésre eltörik | (?) | (?) | (?) |
+
+- Az üveg pályája lehet egy szlalom: ott nem a leesés a veszély, hanem az ütközés.
+- A (?) mezőket még el kell dönteni.
+- **Golyóválasztással kezdődő elágazás:** néhány helyen az elágazás egy golyóválasztás. A döntés itt az, hogy melyik anyag illik ahhoz, ami előre jön, csakhogy előre nem látszik minden (köd, csali).
+
 ## Generált pálya (játékosonként vagy naponta más)
 - A program egy kezdőszámból (seed) rakja össze az útvesztőt: elágazás-típusok + akadályok + szabályok.
 - **Akadály-könyvtár nehézségi csoportokba sorolva.** A generátor csak kiválasztja a megfelelő csoportból az adott szinthez illő akadályt.
