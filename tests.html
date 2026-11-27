@@ -186,7 +186,8 @@ function autoSigns(pts,SG,has){ const N=pts.length, H=p=>p.h||0, C=[0]; for(let 
     if(i+2<N && pts[i+2].gap) put(i,seg(i).l-18,'gap','gap',C[i+1]); } }
 function PATH(name,kind,pts){ const PC=[], SG=[]; buildPath(pts,PC,SG); return finish({name,kind,PC,signs:SG,start:[pts[0].x,pts[0].y+20]}); }
 // a maze: several paths, cordons (bait = never opens, return = opens from the far side, close = shuts silently behind you) and triggers
-function MAZE(name,paths,cords,trigs){ const PC=[], SG=[]; paths.forEach(p=>buildPath(p.pts,PC,SG,p)); const p0=paths[0].pts;
+function MAZE(name,paths,cords,trigs){ const PC=[], SG=[]; paths.forEach((p,bi)=>{ const n0=PC.length; buildPath(p.pts,PC,SG,p); const mine=PC.slice(n0);
+    let from=0; if(bi===0){ let seen=false; for(let i=0;i<mine.length;i++){ if(!mine[i].noEdge) seen=true; else if(seen){ from=i+1; break; } } } mine.forEach((q,i)=>{ if(i>=from && bi>0||i>=from && from>0) q.br=bi; }); }); const p0=paths[0].pts;
   return finish({name,kind:'MAZE',PC,signs:SG,cords,trigs,start:[p0[0].x,p0[0].y+20]}); }
 function finish(t){ let x0=1e9,x1=-1e9,y0=1e9,y1=-1e9; t.PC.forEach(p=>{ [[p.ax,p.ay],[p.bx,p.by]].forEach(([x,y])=>{ x0=Math.min(x0,x-p.w0);x1=Math.max(x1,x+p.w0);y0=Math.min(y0,y-p.w0);y1=Math.max(y1,y+p.w0); }); });
   t.box=[x0,y0,x1,y1];
@@ -337,6 +338,7 @@ const SND={ on:true, ctx:null,
 function respawn(){ st.safe=null; const b=st.ball; b.x=TR.start[0]; b.y=TR.start[1]; b.z=R; b.vx=0;b.vy=0;b.vz=0; b.air=false; b.dead=false; b.t=0; b.fallSnd=false; st.seamKey=null;
   st.ready=false; st.levelT=0; st.run=0; st.done=false; st.camX=b.x; st.camY=b.y; st.camZ=0;
   const f=floorAt(b.x,b.y); st.camA=st.camT=st.ctrlA=(f&&st.camMode!=='fixed')?Math.atan2(f.p.ux,f.p.uy):0; st.camKey=null; st.camSign=1; st.revAcc=0; st.ctrlHold=false;
+  const BC=['#4fa3ff','#ffd23f','#5fd36a','#ff7ad9','#ff9a3c','#59e3e3','#b28cff'].sort(()=>Math.random()-0.5); st.brCol=BC;
   st.mz=TR.cords?{cs:TR.cords.map(c=>({state:c.mode==='close'?'hidden':'closed',t:0})),tg:TR.trigs.map(()=>false)}:null; }
 function hop(){ const b=st.ball; if(!st.ready || b.air || b.dead || st.done) return; b.air=true; b.vz=HOP_UP[st.hopLv-1]; b.vx*=HOP_FWD[st.hopLv-1]; b.vy*=HOP_FWD[st.hopLv-1]; st.jumps++; }
 function step(dt){
@@ -606,10 +608,10 @@ function draw(){
     if(slope && q.p.t!=='e' && q.k%3===1 && top[0][2]>1.5) slopeArrows(q,slope>0);
     cx.globalAlpha=1; }
   // painted edge lines, one stroke per piece (a narrowing reads as narrowing, not as a slope)
-  cx.strokeStyle='rgba(238,236,222,.6)'; cx.beginPath();
-  for(const p of new Set(vis.map(q=>q.p))){ if(p.noEdge || p.t==='e' || p.fade) continue; const c=pieceCorners(p), I=(a,sd)=>P(a[0]-p.nx*sd*0.9,a[1]-p.ny*sd*0.9,a[2]);
-    for(const [i,j,sd] of [[1,2,1],[0,3,-1]]){ const A=I(c[i],sd), B=I(c[j],sd); cx.moveTo(A[0],A[1]); cx.lineTo(B[0],B[1]); } }
-  cx.lineWidth=Math.max(1,0.3*W/110); cx.stroke();
+  const byCol={};                                          // maze branches: each has its own colour (shuffled every start), from the junction to the end
+  for(const p of new Set(vis.map(q=>q.p))){ if(p.noEdge || p.t==='e' || p.fade) continue; const col=(p.br!=null&&st.brCol)?st.brCol[(p.br-1+st.brCol.length)%st.brCol.length]:'rgba(238,236,222,.6)';
+    const c=pieceCorners(p), I=(a,sd)=>P(a[0]-p.nx*sd*0.9,a[1]-p.ny*sd*0.9,a[2]); (byCol[col]=byCol[col]||[]).push([I(c[1],1),I(c[2],1)],[I(c[0],-1),I(c[3],-1)]); }
+  for(const col in byCol){ cx.strokeStyle=col; cx.lineWidth=Math.max(1,(col[0]==='#'?0.45:0.3)*W/110); cx.beginPath(); byCol[col].forEach(([A,B])=>{ cx.moveTo(A[0],A[1]); cx.lineTo(B[0],B[1]); }); cx.stroke(); }
   cx.lineWidth=1;
   // things standing on the track (signs, cordons) and the ball, far to near
   const items=[];
@@ -690,7 +692,7 @@ function drawOverlay(){ const b=st.ball;
     cx.fillStyle='rgba(120,220,150,.9)'; cx.beginPath(); cx.arc(lx-mx*rad*0.85, ly-my*rad*0.85, 9,0,7); cx.fill(); cx.lineWidth=1; }
   cx.textAlign='left';
   const stale=performance.now()-st.lastHeard>1500;
-  $('hud').textContent=(stale?'⚠ no data from the phone\n':'')+'build     16\n'+TR.name+'\n'+'land      '+st.land+' · mood '+(st.mood||0).toFixed(2)+'  (L / K)\n'+'done      '+st.wins+'\n'+'falls     '+st.falls+'\n'+
+  $('hud').textContent=(stale?'⚠ no data from the phone\n':'')+'build     17\n'+TR.name+'\n'+'land      '+st.land+' · mood '+(st.mood||0).toFixed(2)+'  (L / K)\n'+'done      '+st.wins+'\n'+'falls     '+st.falls+'\n'+
     (TR.kind==='HOP'?'hops      '+st.jumps+'\n':'')+'time      '+st.run.toFixed(1)+' s\n'+'link      '+(path==='direct'?'direct':'relay')+' · '+st.rate.toFixed(0)+'/s';
 }
 

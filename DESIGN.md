@@ -157,3 +157,11 @@ Felületek, körülmények: **beton** (alap), **homok**, **víz**, **szél**.
 - Csomópont három úttal: balra zsákutca (széles, csalogató eleje), egyenesen a rossz döntés útja, jobbra a jó út (ijesztően keskeny eleje, utána hosszú és könnyű).
 - A rossz út: nehéz szakasz, mögötte csendben lezáródik egy kordon, a végén túl széles szakadék, a túlpart a ködbe vész. Visszafelé rövid, közepes szakasz, és a platformnál kinyílik a rejtett kordonos egérút, amely a jó útra visz.
 - Két csali-kordon (nem nyílik), mögöttük az út a ködbe vész.
+
+## Ágszínek (build 17)
+- Az elágazás után minden ág szegélycsíkja saját színű, az ág teljes hosszán. A színek minden indításnál véletlenszerűek, hogy ne lehessen megtanulni, hogy "a zöld rossz".
+- A szín csak emlékeztet, merre jártál, a jó utat nem árulja el.
+
+## Átlátás a másik útra (nyitott kérdés)
+- Ügyes játékos az egyik útról átlát a másikra, és lesni tud.
+- Lehetséges ellenszerek: több köd az útvesztőben, az utak távolabb egymástól, eltérő magasság (a másik út mélyen alattad vagy fölötted), takaró felhők, hosszabb szakaszok.
