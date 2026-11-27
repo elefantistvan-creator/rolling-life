@@ -21,9 +21,17 @@
   - Indok: a látványos lezárás elárulná, hogy előre van út, vagyis hogy az akadály nem lehetetlen.
 - A lezárás és a lehetetlenség **nem függ össze** (mind a négy eset létezik):
   - lezárul mögötted, és előre járható
-  - lezárul mögötted, és előre lehetetlen (kérdéses, legyen-e ilyen: kegyetlen csapda)
+  - lezárul mögötted, és előre lehetetlen: lásd "A rossz döntés útja" (van belőle kiút, nem csapda)
   - nyitva marad, és előre lehetetlen (aki visszafordul, jól döntött)
   - nyitva marad, és előre járható
+
+## A rossz döntés útja (eldöntve)
+- **Jó döntés:** hosszabb, de jóval könnyebb út.
+- **Rossz döntés:** nehéz akadálypálya, a végén egy **lehetetlen rész**. A pálya mögötte titokban lezárul.
+- A kihívás itt a **lehetetlenség elfogadása**: aki visszafordul, az nyer.
+- Visszafelé: egy rövid, **közepes** akadályszakasz (nem sok).
+- Közben titokban kinyílt egy **könnyű egérút** (kordonos leágazás). Ebben is vannak akadályok, de nem túl nehezek.
+- Az egérút oda vezet, ahová a helyes út vezetett volna. A rossz döntés ára tehát a nehezebb út és az elvesztett életek kockázata, nem az, hogy végleg eltévedsz.
 
 ## Lezárt leágazások (kordonok)
 - A pálya néhol leágazik, mint egy autópálya-kijárat, de a leágazást egy **kordon** zárja le.
