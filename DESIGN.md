@@ -77,6 +77,13 @@ Felületek, körülmények: **beton** (alap), **homok**, **víz**, **szél**.
 - **A fa az alap:** a választott golyó csak a következő szakaszra szól, utána visszaáll fára.
 - **Golyóválasztással kezdődő elágazás:** néhány helyen az elágazás egy golyóválasztás. A döntés itt az, hogy melyik anyag illik ahhoz, ami előre jön, csakhogy előre nem látszik minden (köd, csali).
 
+## Táj és hangok (ötlet)
+- A pálya alatti mélység táj legyen: erdő, város, óceán stb.
+- A táj hangulata **csendben jelzi a döntéseket**: rossz út felé zordabb (sötétebb, ködösebb, kopárabb), jó út felé vidámabb. Nem mond ki semmit, csak érezni lehet.
+- A tájat kódból rajzoljuk (fák, házak, hullámzó víz, köd, színpaletták), nem fotókból, így bármennyi változat lehet, és a hangulat fokozatosan váltható.
+- **Hangok:** gurulás anyagonként (fa, vas, papír, üveg) és felületenként (beton, homok, víz), a sebességhez igazodva; szél; táj-háttérhang (erdő, város, tenger); ütközés, kordon, lift.
+- A hangokat a böngésző maga is elő tudja állítani (Web Audio), vagy jöhetnek ingyenes hangtárakból.
+
 ## Generált pálya (játékosonként vagy naponta más)
 - A program egy kezdőszámból (seed) rakja össze az útvesztőt: elágazás-típusok + akadályok + szabályok.
 - **Akadály-könyvtár nehézségi csoportokba sorolva.** A generátor csak kiválasztja a megfelelő csoportból az adott szinthez illő akadályt.
