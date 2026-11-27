@@ -136,6 +136,9 @@ const RAMP_LOSS=[1,0.6,0.35,0.15,0];      // how much the ramp slope slows the b
 const RAMP_LIFT=[1,1.25,1.5,1.8,2.1];     // how steeply the lip throws the ball up
 const HOP_UP=[150,180,210,240,270];       // hop: upward speed (cm/s)  -> time in the air
 const HOP_FWD=[1,1.1,1.2,1.35,1.5];       // hop: forward speed multiplier
+// ball materials: acc = how strongly it answers the tilt, damp = how fast it loses speed (higher = less "runaway", easier to steer back)
+const MATS={wood:{name:'Wood',acc:2.0,damp:1.0,c0:'#f0c58e',c1:'#8a5528',dot:'rgba(90,50,20,'},
+            iron:{name:'Iron',acc:1.0,damp:0.35,c0:'#d9e0ea',c1:'#3e4654',dot:'rgba(150,40,40,'}};
 // ---- test tracks: segments along the course (y in cm). f = floor piece, g = gap (nothing under), e = finish pad.
 // each floor piece: y0..y1, centre x, width w0->w1, height h0->h1 (cm above the base level)
 function T(name,kind,segs){ let y=0; const S=segs.map(s=>{ const o=Object.assign({x:0,h0:0,h1:0},s); o.y0=y; y+=s.l; o.y1=y; if(o.w1==null) o.w1=o.w; o.h1=(s.h1!=null?s.h1:o.h0); return o; }); return {name,kind,S,L:y}; }
@@ -152,7 +155,7 @@ let TR=TRACKS[0];
 function segAt(y){ for(const s of TR.S){ if(y>=s.y0 && y<s.y1) return s; } return null; }
 function floorAt(x,y){ const s=segAt(y); if(!s || s.t==='g') return null; const t=(y-s.y0)/(s.y1-s.y0);
   const w=s.w+(s.w1-s.w)*t, h=s.h0+(s.h1-s.h0)*t; if(Math.abs(x-s.x)>w/2) return null; return {h, slope:(s.h1-s.h0)/(s.y1-s.y0), s}; }
-let st={linked:false,lastHeard:0,lastSeq:-1,b:0,g:0,b0:0,g0:0,tx:0,ty:0,sens:2,rampLv:3,hopLv:3,ready:false,levelT:0,menu:true,
+let st={linked:false,lastHeard:0,lastSeq:-1,b:0,g:0,b0:0,g0:0,tx:0,ty:0,sens:2,rampLv:3,hopLv:3,mat:'wood',ready:false,levelT:0,menu:true,
         ball:{x:0,y:20,z:R,vx:0,vy:0,vz:0,air:false,dead:false,t:0},falls:0,wins:0,run:0,done:false,
         camX:0,camY:0,msgs:0,rate:0,rateT:0,jumps:0,spots:[[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]]};
 function startScreen(){
@@ -184,9 +187,10 @@ function openMenu(){ st.menu=true; const m=$('menu'); m.innerHTML='<h2>Test trac
     c.onclick=()=>loadTrack(i); g.appendChild(c); });
   m.classList.remove('hidden'); $('back').classList.add('hidden'); $('knobs').classList.add('hidden'); }
 function knobs(){ const k=$('knobs'); const rows=[['Sensitivity','sens'],['Ramp boost','rampLv'],['Hop length','hopLv']];
-  k.innerHTML=rows.map(([n,key])=>'<div class="row"><b>'+n+'</b>'+[1,2,3,4,5].map(v=>'<span data-k="'+key+'" data-v="'+v+'" class="'+(st[key]===v?'on':'')+'">'+v+'</span>').join('')+'</div>').join('');
-  k.querySelectorAll('span').forEach(e=>e.onclick=()=>{ st[e.dataset.k]=+e.dataset.v; try{ localStorage.setItem('rl_'+e.dataset.k,e.dataset.v); }catch(x){} knobs(); }); }
-try{ ['sens','rampLv','hopLv'].forEach(k=>{ const v=+localStorage.getItem('rl_'+k); if(v>=1&&v<=5) st[k]=v; }); }catch(e){}
+  k.innerHTML='<div class="row"><b>Ball</b>'+Object.keys(MATS).map(m=>'<span style="width:auto;padding:5px 10px" data-m="'+m+'" class="'+(st.mat===m?'on':'')+'">'+MATS[m].name+'</span>').join('')+'</div>'+rows.map(([n,key])=>'<div class="row"><b>'+n+'</b>'+[1,2,3,4,5].map(v=>'<span data-k="'+key+'" data-v="'+v+'" class="'+(st[key]===v?'on':'')+'">'+v+'</span>').join('')+'</div>').join('');
+  k.querySelectorAll('span[data-m]').forEach(e=>e.onclick=()=>{ st.mat=e.dataset.m; try{ localStorage.setItem('rl_mat',st.mat); }catch(x){} knobs(); });
+  k.querySelectorAll('span[data-k]').forEach(e=>e.onclick=()=>{ st[e.dataset.k]=+e.dataset.v; try{ localStorage.setItem('rl_'+e.dataset.k,e.dataset.v); }catch(x){} knobs(); }); }
+try{ const mm=localStorage.getItem('rl_mat'); if(MATS[mm]) st.mat=mm; ['sens','rampLv','hopLv'].forEach(k=>{ const v=+localStorage.getItem('rl_'+k); if(v>=1&&v<=5) st[k]=v; }); }catch(e){}
 function loadTrack(i){ TR=TRACKS[i]; st.menu=false; st.falls=0; st.wins=0; $('menu').classList.add('hidden'); $('back').classList.remove('hidden'); $('knobs').classList.toggle('hidden',false); knobs(); respawn(); }
 $('back').onclick=openMenu;
 addEventListener('keydown',e=>{ const n=+e.key; if(n>=1&&n<=5){ st.sens=n; flash('sensitivity '+n); knobs(); } if((e.key==='m'||e.key==='M'||e.key==='Escape') && st.linked) openMenu(); });
@@ -216,9 +220,10 @@ function step(dt){
     st.run+=dt;
     if(!b.air){
       const f=floorAt(b.x,b.y);
-      b.vx+= G*Math.sin(st.tx*d)*dt;
-      b.vy+= -G*Math.sin(st.ty*d)*dt - (f?G*f.slope/Math.sqrt(1+f.slope*f.slope)*(f.slope>0?RAMP_LOSS[st.rampLv-1]:1):0)*dt;   // tilt + the slope (uphill loss is tunable)
-      const k=Math.exp(-0.35*dt); b.vx*=k; b.vy*=k;
+      const M=MATS[st.mat];
+      b.vx+= G*M.acc*Math.sin(st.tx*d)*dt;
+      b.vy+= -G*M.acc*Math.sin(st.ty*d)*dt - (f?G*f.slope/Math.sqrt(1+f.slope*f.slope)*(f.slope>0?RAMP_LOSS[st.rampLv-1]:1):0)*dt;   // tilt + the slope (uphill loss is tunable)
+      const k=Math.exp(-M.damp*dt); b.vx*=k; b.vy*=k;
       b.x+=b.vx*dt; b.y+=b.vy*dt;
       const f2=floorAt(b.x,b.y);
       if(f2){ b.z=f2.h+R; b.vz=b.vy*f2.slope; }
@@ -266,7 +271,7 @@ function draw(){
     poly([f1,f2,f3,f4],'rgb('+c.join(',')+')'); poly([f4,f3,t3,t4],'rgb('+c.map(v=>v+35).join(',')+')'); });
   // pillars
   TR.S.forEach(s=>{ if(s.t==='g') return; [s.y0+4,s.y1-4].forEach(py=>{ if(py<st.camY-90||py>st.camY+420) return;
-    const t=P(s.x,py,-3), u=P(s.x,py,FZ); const g2=cx.createLinearGradient(t[0],t[1],u[0],u[1]); g2.addColorStop(0,'rgba(90,64,36,.9)'); g2.addColorStop(1,'rgba(90,64,36,0)');
+    const t=P(s.x,py,-3), u=P(s.x,py,FZ); const g2=cx.createLinearGradient(t[0],t[1],u[0],u[1]); g2.addColorStop(0,'rgba(95,100,110,.9)'); g2.addColorStop(1,'rgba(95,100,110,0)');
     cx.strokeStyle=g2; cx.lineWidth=Math.max(1,2*t[2]); cx.beginPath(); cx.moveTo(t[0],t[1]); cx.lineTo(u[0],u[1]); cx.stroke(); }); });
   cx.lineWidth=1;
   // track pieces, far to near, in world-locked 5 cm strips
@@ -276,19 +281,23 @@ function draw(){
     const wa=s.w+(s.w1-s.w)*ta, wb=s.w+(s.w1-s.w)*tb, ha=s.h0+(s.h1-s.h0)*ta, hb=s.h0+(s.h1-s.h0)*tb;
     const a1=P(s.x-wa/2,ya,ha),a2=P(s.x+wa/2,ya,ha),b2=P(s.x+wb/2,y,hb),b1=P(s.x-wb/2,y,hb);
     const za=Math.min(ha,0)-3, zb=Math.min(hb,0)-3;                                                // underside: ramps look solid, low pieces keep their thickness
-    poly([P(s.x-wa/2,ya,ha),P(s.x-wb/2,y,hb),P(s.x-wb/2,y,zb),P(s.x-wa/2,ya,za)],'#5a3a1c');
-    poly([P(s.x+wa/2,ya,ha),P(s.x+wb/2,y,hb),P(s.x+wb/2,y,zb),P(s.x+wa/2,ya,za)],'#5a3a1c');
-    poly([a1,a2,P(s.x+wa/2,ya,za),P(s.x-wa/2,ya,za)],'#4a3018');                                    // near edge
-    const shade=Math.floor(y/20)%2?1:0.94, base=s.t==='e'?[230,210,120]:(s.h1!==s.h0?[236,186,122]:[214,164,104]);
-    poly([a1,a2,b2,b1],'rgb('+base.map(v=>Math.round(v*shade)).join(',')+')'); }
+    poly([P(s.x-wa/2,ya,ha),P(s.x-wb/2,y,hb),P(s.x-wb/2,y,zb),P(s.x-wa/2,ya,za)],'#4b4f57');
+    poly([P(s.x+wa/2,ya,ha),P(s.x+wb/2,y,hb),P(s.x+wb/2,y,zb),P(s.x+wa/2,ya,za)],'#4b4f57');
+    poly([a1,a2,P(s.x+wa/2,ya,za),P(s.x-wa/2,ya,za)],'#3b3e45');                                    // near edge
+    const shade=Math.floor(y/20)%2?1:0.94, base=s.t==='e'?[230,210,120]:(s.h1!==s.h0?[176,180,188]:[142,146,154]);
+    poly([a1,a2,b2,b1],'rgb('+base.map(v=>Math.round(v*shade)).join(',')+')');
+    if(a1[2]>2){ const n=Math.round(ya/stp); let r=(n*2654435761)>>>0;                     // speckles: pseudo-random but fixed per strip
+      for(let k=0;k<Math.max(3,Math.round(wa/4));k++){ r=(r*1103515245+12345)>>>0; const fx=(r/4294967296-0.5)*wa*0.95; r=(r*1103515245+12345)>>>0; const fy=ya+(r/4294967296)*stp;
+        r=(r*1103515245+12345)>>>0; const dk=r&1; const pt=P(s.x+fx,fy,s.h0+(s.h1-s.h0)*((fy-s.y0)/(s.y1-s.y0)));
+        cx.fillStyle=dk?'rgba(40,42,48,.55)':'rgba(220,224,232,.35)'; cx.fillRect(pt[0],pt[1],Math.max(1,0.7*pt[2]),Math.max(1,0.45*pt[2])); } } }
   // ball
   const b=st.ball, fl=floorAt(b.x,b.y);
   if(fl && !b.dead){ const sh=P(b.x+0.5,b.y-0.5,fl.h); const sz=Math.max(0.3,1-(b.z-R-fl.h)/40); cx.fillStyle='rgba(0,0,0,'+(0.35*sz)+')'; cx.beginPath(); cx.ellipse(sh[0],sh[1],R*sh[2]*1.1*sz,R*sh[2]*0.6*sz,0,0,7); cx.fill(); }
   const q=P(b.x,b.y,b.z), rr=R*q[2];
-  if(rr>0.5){ const bg=cx.createRadialGradient(q[0]-rr*.35,q[1]-rr*.35,rr*.1,q[0],q[1],rr); bg.addColorStop(0,'#f2f4f8'); bg.addColorStop(1,'#59606e'); cx.fillStyle=bg; cx.beginPath(); cx.arc(q[0],q[1],rr,0,7); cx.fill();
+  if(rr>0.5){ const bg=cx.createRadialGradient(q[0]-rr*.35,q[1]-rr*.35,rr*.1,q[0],q[1],rr); bg.addColorStop(0,MATS[st.mat].c0); bg.addColorStop(1,MATS[st.mat].c1); cx.fillStyle=bg; cx.beginPath(); cx.arc(q[0],q[1],rr,0,7); cx.fill();
     const vd=[0,-Math.cos(Math.PI/6),Math.sin(Math.PI/6)];
     st.spots.forEach((sp,i)=>{ const f=sp[0]*vd[0]+sp[1]*vd[1]+sp[2]*vd[2]; if(f<0.15) return; const m=P(b.x+sp[0]*R*0.98,b.y+sp[1]*R*0.98,b.z+sp[2]*R*0.98);
-      cx.fillStyle=i<2?'rgba(170,40,40,'+f+')':'rgba(30,40,60,'+(f*0.8)+')'; cx.beginPath(); cx.arc(m[0],m[1],rr*0.22*f,0,7); cx.fill(); }); }
+      cx.fillStyle=MATS[st.mat].dot+(i<2?f:f*0.7)+')'; cx.beginPath(); cx.arc(m[0],m[1],rr*0.22*f,0,7); cx.fill(); }); }
   cx.textAlign='center';
   if(!st.ready && !b.dead){ const lvl=Math.hypot(st.tx,st.ty)/SENS[st.sens]; cx.font='bold 30px system-ui'; cx.fillStyle=lvl<4?'#6ad18a':'#e8ecf5';
     cx.fillText(lvl<4?'hold it…':'Hold the phone level  ('+lvl.toFixed(0)+'°)', W/2, H*0.14); if(lvl<4){ cx.fillStyle='#6ad18a'; cx.fillRect(W/2-100,H*0.14+16,200*Math.min(1,st.levelT),6); } }
