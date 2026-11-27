@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Tray – practice</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%;background:#0d1117;color:#e8ecf5;font:15px/1.4 system-ui,sans-serif;overflow:hidden}
+  .wrap{height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;padding:16px;text-align:center}
+  h1{font-size:22px}
+  button{font:inherit;font-size:18px;padding:14px 22px;border:0;border-radius:12px;background:#c8862e;color:#fff;min-width:220px}
+  button.alt{background:#2a3140}
+  input{font:inherit;font-size:28px;letter-spacing:8px;text-align:center;width:200px;padding:10px;border-radius:12px;border:2px solid #2a3140;background:#161b24;color:#fff;text-transform:uppercase}
+  .muted{color:#8b95a8;font-size:13px}
+  .code{font-size:56px;font-weight:700;letter-spacing:12px}
+  #qr img{background:#fff;padding:8px;border-radius:8px}
+  .hidden{display:none!important}
+  #screen{position:fixed;inset:0}
+  #cv{position:absolute;inset:0;width:100%;height:100%}
+  #hud{position:absolute;left:14px;top:10px;font:14px/1.6 ui-monospace,monospace;color:#9aa6bd;white-space:pre;pointer-events:none}
+  #big{position:absolute;left:0;right:0;top:8%;text-align:center;font-size:44px;font-weight:800;pointer-events:none;opacity:0;transition:opacity .6s}
+  #pad{width:100%;flex:1;border-radius:18px;background:#161b24;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:10px}
+  #pad .big2{font-size:40px;font-weight:800}
+</style>
+</head>
+<body>
+<div id="pick" class="wrap">
+  <h1>Tray — practice</h1>
+  <button id="bScreen">This is the SCREEN</button>
+  <button id="bPhone" class="alt">This is the PHONE</button>
+  <p class="muted">Open on the laptop first, then scan the code with the phone.</p>
+</div>
+<div id="wait" class="wrap hidden">
+  <p class="muted">Code</p>
+  <div class="code" id="codeTxt">····</div>
+  <div id="qr"></div>
+  <p class="muted" id="urlTxt"></p>
+  <p id="sStatus" class="muted">Connecting…</p>
+</div>
+<div id="screen" class="hidden"><canvas id="cv"></canvas><div id="hud"></div><div id="big"></div></div>
+<div id="join" class="wrap hidden">
+  <h1>Enter the code</h1>
+  <input id="codeIn" maxlength="4" autocomplete="off">
+  <button id="bJoin">Connect</button>
+  <p id="jStatus" class="muted"></p>
+</div>
+<div id="ctrl" class="wrap hidden">
+  <div id="pad">
+    <div class="big2">TRAY</div>
+    <div class="muted" id="cInfo">Hold the phone flat in ONE hand, screen up, like a tray.<br>Phone level with the floor = tray level.<br>Look at the big screen, not here.</div>
+  </div>
+  <button id="bZero" class="alt">Re-level (optional)</button>
+</div>
+<script>
+// ---------- relay: same public MQTT brokers as the Gorillas game ----------
+const BROKERS=['wss://broker.emqx.io:8084/mqtt','wss://broker.hivemq.com:8884/mqtt'];
+const ROOT='tray-game/v1/';
+let role='', code='', clients=[], onMsg=()=>{};
+const $=id=>document.getElementById(id);
+const show=id=>{ for(const s of ['pick','wait','screen','join','ctrl']) $(s).classList.toggle('hidden',s!==id); };
+function loadScript(src,cb,err){ const s=document.createElement('script'); s.src=src; s.onload=cb; s.onerror=err; document.head.appendChild(s); }
+function inbox(){ return ROOT+code+(role==='screen'?'/s':'/c'); }
+function outbox(){ return ROOT+code+(role==='screen'?'/c':'/s'); }
+let pc=null, dc=null, path='relay';
+function send(m,qos){ const t=JSON.stringify(m);
+  if(dc && dc.readyState==='open' && m.t!=='sdp' && m.t!=='ice'){ try{ dc.send(t); if(!qos) return; }catch(e){} }
+  relaySend(t,qos); }
+function relaySend(t,qos){ for(const c of clients){ try{ if(c.connected) c.publish(outbox(),t,{qos:qos||0}); }catch(e){} } }
+function connect(onReady,onErr){
+  const go=()=>{ let ready=false, failed=0;
+    for(const url of BROKERS){
+      let c; try{ c=mqtt.connect(url,{clientId:'pl_'+Math.random().toString(36).slice(2,10),clean:true,reconnectPeriod:3000,connectTimeout:8000}); }catch(e){ failed++; continue; }
+      clients.push(c);
+      c.on('connect',()=>{ c.subscribe(inbox(),{qos:0}); if(!ready){ ready=true; onReady(); } });
+      c.on('message',(tp,p)=>{ try{ const m=JSON.parse(p.toString()); if(m.t==='sdp'||m.t==='ice') rtcSignal(m); else onMsg(m); }catch(e){} });
+      c.on('error',()=>{ if(++failed>=BROKERS.length && !ready) onErr(); });
+    } };
+  if(window.mqtt) go(); else loadScript('https://unpkg.com/mqtt@5.10.1/dist/mqtt.min.js',go,onErr);
+}
+
+// ---------- direct link (WebRTC): the relay only carries the handshake ----------
+function rtcStart(isScreen){
+  if(pc) return;
+  pc=new RTCPeerConnection({iceServers:[{urls:'stun:stun.l.google.com:19302'}]});
+  pc.onicecandidate=e=>{ if(e.candidate) send({t:'ice',c:e.candidate.toJSON()},1); };
+  pc.onconnectionstatechange=()=>{ if(pc.connectionState==='failed'||pc.connectionState==='closed'){ path='relay'; dc=null; } };
+  const wire=ch=>{ dc=ch; ch.onopen=()=>{ path='direct'; checkPath(); }; ch.onclose=()=>{ path='relay'; };
+    ch.onmessage=e=>{ try{ onMsg(JSON.parse(e.data)); }catch(x){} }; };
+  if(isScreen){
+    wire(pc.createDataChannel('ctl',{ordered:false,maxRetransmits:0}));   // late packet = useless, never resend
+    pc.createOffer().then(o=>pc.setLocalDescription(o)).then(()=>send({t:'sdp',d:pc.localDescription.toJSON()},1));
+  } else pc.ondatachannel=e=>wire(e.channel);
+}
+let iceWait=[];
+async function rtcSignal(m){
+  if(m.t==='sdp'){
+    if(m.d.type==='offer'){ if(pc) return; rtcStart(false); }
+    if(!pc || pc.remoteDescription) return;
+    await pc.setRemoteDescription(m.d);
+    for(const c of iceWait){ try{ await pc.addIceCandidate(c); }catch(e){} } iceWait=[];
+    if(m.d.type==='offer'){ const a=await pc.createAnswer(); await pc.setLocalDescription(a); send({t:'sdp',d:pc.localDescription.toJSON()},1); }
+  } else if(m.t==='ice'){
+    if(!pc || !pc.remoteDescription) iceWait.push(m.c); else { try{ await pc.addIceCandidate(m.c); }catch(e){} }
+  }
+}
+let pathKind='';
+async function checkPath(){   // host = same local network, srflx/prflx = through the internet, relay = TURN
+  try{ const r=await pc.getStats(); let pair=null, loc={};
+    r.forEach(v=>{ if(v.type==='candidate-pair' && v.nominated && v.state==='succeeded') pair=v; if(v.type==='local-candidate') loc[v.id]=v; });
+    if(pair && loc[pair.localCandidateId]) pathKind=loc[pair.localCandidateId].candidateType;
+  }catch(e){}
+}
+
+
+
+// ================= SCREEN =================
+const SENS=[0,0.08,0.15,0.25,0.35,0.5];   // sensitivity levels 1–5
+const TW=60, TH=40, R=1.6;                 // tray 60×40 cm, ball radius 1.6 cm
+const G=981*5/7;                           // rolling ball on a slope: a = 5/7·g·sinθ (cm/s²)
+let st={linked:false,lastHeard:0,lastSeq:-1,b:0,g:0,b0:0,g0:0,tx:0,ty:0,
+        sens:2,ready:false,levelT:0,ball:{x:0,y:0,vx:0,vy:0,z:0,vz:0,falling:false,t:0},run:0,best:0,falls:0,rate:0,msgs:0,rateT:0};
+function startScreen(){
+  role='screen';
+  code=Array.from({length:4},()=>'ABCDEFGHJKMNPQRSTUVWXYZ'[Math.floor(Math.random()*23)]).join('');
+  $('codeTxt').textContent=code;
+  const url=location.origin+location.pathname+'?c='+code; $('urlTxt').textContent=url;
+  loadScript('https://unpkg.com/qrcode-generator@1.4.4/qrcode.js',()=>{ try{ const q=qrcode(0,'M'); q.addData(url); q.make(); $('qr').innerHTML=q.createImgTag(6,0); }catch(e){} },()=>{});
+  show('wait'); onMsg=screenMsg;
+  try{ st.best=+localStorage.getItem('trayBest')||0; }catch(e){}
+  connect(()=>{ $('sStatus').textContent='Waiting for the phone…'; },()=>{ $('sStatus').textContent='No connection.'; });
+  let last=performance.now();
+  const loop=now=>{ requestAnimationFrame(loop); const dt=Math.min(0.033,(now-last)/1000); last=now; if(st.linked){ step(dt); draw(); } };
+  requestAnimationFrame(loop);
+}
+function screenMsg(m){
+  st.lastHeard=performance.now();
+  if(m.t==='hello'){ if(!st.linked){ st.linked=true; show('screen'); resize(); } send({t:'ok'},1); rtcStart(true); return; }
+  if(m.t==='zero'){ st.zeroNext=true; return; }
+  if(m.t==='o'){ if(m.s<=st.lastSeq && st.lastSeq-m.s<1000) return; st.lastSeq=m.s; st.msgs++;
+    const now=performance.now(); if(st.lastArr){ (st.gaps=st.gaps||[]).push(now-st.lastArr); if(st.gaps.length>90) st.gaps.shift(); } st.lastArr=now;
+    st.b=m.b; st.g=m.g; st.ang=m.a; if(st.zeroNext){ st.zeroNext=false; st.b0=m.b; st.g0=m.g; respawn(); } }
+}
+function respawn(){ const b=st.ball; b.x=0;b.y=0;b.vx=0;b.vy=0;b.z=0;b.vz=0;b.falling=false; st.run=0; st.ready=false; st.levelT=0; }
+function step(dt){
+  // tray tilt (deg) from the phone, relative to the zero pose; light smoothing only
+  const GAIN=SENS[st.sens];                        // share of the hand's tilt that reaches the tray (keys 1–5 on the laptop)
+  const wx=Math.max(-12,Math.min(12,(st.g-st.g0)*GAIN)), wy=Math.max(-12,Math.min(12,(st.b-st.b0)*GAIN));
+  const a=1-Math.exp(-dt/0.10); st.tx+=(wx-st.tx)*a; st.ty+=(wy-st.ty)*a;
+  const b=st.ball, d=Math.PI/180;
+  if(!st.ready){                              // wait: hold the phone level for 1 s, then the ball is released
+    const lvl=Math.hypot(st.tx,st.ty)/SENS[st.sens];
+    st.levelT = lvl<4 ? st.levelT+dt : 0;
+    if(st.levelT>=1){ st.ready=true; flash('GO'); }
+  } else if(!b.falling){
+    b.vx+= G*Math.sin(st.tx*d)*dt;          // right edge down -> rolls right
+    b.vy+= -G*Math.sin(st.ty*d)*dt;         // far edge down  -> rolls away (up the screen)
+    const f=Math.exp(-0.6*dt); b.vx*=f; b.vy*=f;   // a little rolling resistance
+    b.x+=b.vx*dt; b.y+=b.vy*dt; st.run+=dt;
+    if(st.run>st.best){ st.best=st.run; }
+    if(Math.abs(b.x)>TW/2 || Math.abs(b.y)>TH/2){ b.falling=true; b.t=0; st.falls++; try{ localStorage.setItem('trayBest',st.best.toFixed(2)); }catch(e){}
+      flash(st.run.toFixed(1)+' s'); }
+  } else {
+    b.t+=dt; b.vz-=981*dt; b.z+=b.vz*dt; b.x+=b.vx*dt; b.y+=b.vy*dt;
+    if(b.t>0.7) respawn();                   // straight back in: no menus, no waiting
+  }
+  const now=performance.now(); if(now-st.rateT>1000){ st.rate=st.msgs*1000/(now-st.rateT||1); st.msgs=0; st.rateT=now; }
+}
+function flash(t){ const e=$('big'); e.textContent=t; e.style.transition='none'; e.style.opacity=1; requestAnimationFrame(()=>{ e.style.transition='opacity 1.2s'; e.style.opacity=0; }); }
+const cv=$('cv'), cx=cv.getContext('2d'); let W=0,H=0;
+function resize(){ const D=devicePixelRatio||1; W=cv.clientWidth; H=cv.clientHeight; cv.width=W*D; cv.height=H*D; cx.setTransform(D,0,0,D,0,0); }
+addEventListener('resize',resize);
+addEventListener('keydown',e=>{ const n=+e.key; if(n>=1&&n<=5){ st.sens=n; flash('sensitivity '+n); } });
+// tray-plane point (x right, y away, z up; cm) -> screen, through the tray tilt and a camera looking down at ~55°
+function P(x,y,z){
+  const d=Math.PI/180, ax=st.tx*d, ay=st.ty*d;
+  let X=x*Math.cos(ax)+z*Math.sin(ax), Z=-x*Math.sin(ax)+z*Math.cos(ax), Y=y;        // roll about the far axis
+  let Y2=Y*Math.cos(ay)-Z*Math.sin(ay), Z2=Y*Math.sin(ay)+Z*Math.cos(ay);           // pitch about the side axis
+  const el=30*d, up=Y2*Math.sin(el)+Z2*Math.cos(el), depth=Y2*Math.cos(el)-Z2*Math.sin(el);  // camera above-front, looking down 55°
+  const dist=110, k=dist/(dist+depth);
+  const S=Math.min(W/(TW*1.4),H/(TH*1.3));
+  return [W/2+X*S*k, H*0.60-up*S*k, k*S];
+}
+function draw(){
+  cx.fillStyle='#0d1117'; cx.fillRect(0,0,W,H);
+  // tray: rim and surface
+  const c=[P(-TW/2,-TH/2,0),P(TW/2,-TH/2,0),P(TW/2,TH/2,0),P(-TW/2,TH/2,0)];
+  const cb=[P(-TW/2,-TH/2,-2),P(TW/2,-TH/2,-2),P(TW/2,TH/2,-2),P(-TW/2,TH/2,-2)];
+  cx.fillStyle='#5a3a1c'; cx.beginPath(); [cb[0],cb[1],c[1],c[0]].forEach((p,i)=>i?cx.lineTo(p[0],p[1]):cx.moveTo(p[0],p[1])); cx.fill();
+  const g=cx.createLinearGradient(c[3][0],c[3][1],c[0][0],c[0][1]); g.addColorStop(0,'#b07a42'); g.addColorStop(1,'#d9a466');
+  cx.fillStyle=g; cx.beginPath(); c.forEach((p,i)=>i?cx.lineTo(p[0],p[1]):cx.moveTo(p[0],p[1])); cx.closePath(); cx.fill();
+  cx.strokeStyle='rgba(60,35,10,.35)'; cx.lineWidth=1;
+  for(let x=-TW/2+10;x<TW/2;x+=10){ const a=P(x,-TH/2,0),b=P(x,TH/2,0); cx.beginPath(); cx.moveTo(a[0],a[1]); cx.lineTo(b[0],b[1]); cx.stroke(); }
+  for(let y=-TH/2+10;y<TH/2;y+=10){ const a=P(-TW/2,y,0),b=P(TW/2,y,0); cx.beginPath(); cx.moveTo(a[0],a[1]); cx.lineTo(b[0],b[1]); cx.stroke(); }
+  const m=P(0,0,0); cx.strokeStyle='rgba(60,35,10,.6)'; cx.beginPath(); cx.arc(m[0],m[1],4,0,7); cx.stroke();
+  // ball + shadow
+  const b=st.ball;
+  if(!b.falling){ const sh=P(b.x+0.6,b.y-0.6,0); cx.fillStyle='rgba(0,0,0,.3)'; cx.beginPath(); cx.ellipse(sh[0],sh[1],R*sh[2]*1.1,R*sh[2]*0.7,0,0,7); cx.fill(); }
+  const q=P(b.x,b.y,R+b.z), rr=R*q[2];
+  if(q[1]<H+50){ const bg=cx.createRadialGradient(q[0]-rr*.35,q[1]-rr*.35,rr*.1,q[0],q[1],rr);
+    bg.addColorStop(0,'#f2f4f8'); bg.addColorStop(1,'#59606e'); cx.fillStyle=bg; cx.beginPath(); cx.arc(q[0],q[1],rr,0,7); cx.fill(); }
+  if(!st.ready){ const lvl=Math.hypot(st.tx,st.ty)/SENS[st.sens];
+    cx.font='bold 30px system-ui'; cx.textAlign='center'; cx.fillStyle=lvl<4?'#6ad18a':'#e8ecf5';
+    cx.fillText(lvl<4?'hold it…':'Hold the phone level  ('+lvl.toFixed(0)+'°)', W/2, H*0.16); cx.textAlign='left';
+    if(lvl<4){ cx.fillStyle='#6ad18a'; cx.fillRect(W/2-100,H*0.16+16,200*Math.min(1,st.levelT),6); } }
+  const stale=performance.now()-st.lastHeard>1500;
+  $('hud').textContent=(stale?'⚠ no data from the phone\n':'')+
+    'on tray   '+st.run.toFixed(1)+' s\n'+'best      '+st.best.toFixed(1)+' s\n'+'falls     '+st.falls+'\n'+
+    'build     6\n'+
+    'sens      '+st.sens+'  (keys 1–5)\n'+
+    'phone     '+(st.ang===90||st.ang===270?'landscape':'portrait')+' · raw '+st.g.toFixed(0)+'° / '+st.b.toFixed(0)+'°\n'+
+    'gaps      '+(()=>{ const g=(st.gaps||[]).slice().sort((a,b)=>a-b); return g.length? Math.round(g[g.length>>1])+' ms typ, '+Math.round(g[g.length-1])+' ms max':'–'; })()+'\n'+
+    'tilt      '+st.tx.toFixed(0)+'° / '+st.ty.toFixed(0)+'°\n'+'link      '+(path==='direct'?'direct':'relay')+' · '+st.rate.toFixed(0)+'/s';
+}
+// ================= PHONE =================
+let ph={ori:null,seq:0,linked:false,last:0};
+function startPhone(pre){ role='phone'; show('join'); if(pre) $('codeIn').value=pre; $('bJoin').onclick=joinPhone; }
+async function joinPhone(){
+  code=$('codeIn').value.trim().toUpperCase(); if(code.length!==4){ $('jStatus').textContent='4 letters.'; return; }
+  try{ if(typeof DeviceOrientationEvent!=='undefined' && DeviceOrientationEvent.requestPermission) await DeviceOrientationEvent.requestPermission(); }catch(e){}
+  addEventListener('deviceorientation',e=>{ if(e.beta==null) return;
+    const a=(((screen.orientation&&screen.orientation.angle)||window.orientation||0)+360)%360;
+    let b=e.beta, g=e.gamma;                       // sensor angles are in the phone's own frame (portrait)
+    if(a===90){ [b,g]=[-e.gamma, e.beta]; }        // landscape, top of the phone to the left
+    else if(a===270){ [b,g]=[e.gamma,-e.beta]; }   // landscape, top of the phone to the right
+    else if(a===180){ [b,g]=[-e.beta,-e.gamma]; }
+    ph.ori={b,g,a}; });
+  setInterval(()=>{ if(!ph.linked || !ph.ori) return; const now=performance.now(); if(now-ph.last<33) return;
+    ph.last=Math.max(ph.last+33,now-33);                                                         // steady ~30 per second
+    send({t:'o',s:ph.seq++,b:+ph.ori.b.toFixed(2),g:+ph.ori.g.toFixed(2),a:ph.ori.a}); },8);
+  try{ if(navigator.wakeLock) await navigator.wakeLock.request('screen'); }catch(e){}
+  $('jStatus').textContent='Connecting…';
+  onMsg=m=>{ if(m.t==='ok' && !ph.linked){ ph.linked=true; show('ctrl'); if(navigator.vibrate) navigator.vibrate(60); } };
+  connect(()=>{ const hi=()=>{ if(!ph.linked) send({t:'hello'},1); }; hi(); const iv=setInterval(()=>{ ph.linked?clearInterval(iv):hi(); },1200);
+                setTimeout(()=>{ if(!ph.linked) $('jStatus').textContent='No screen with this code.'; },12000); },
+          ()=>{ $('jStatus').textContent='No connection.'; });
+}
+$('bZero').onclick=()=>{ send({t:'zero'},1); if(navigator.vibrate) navigator.vibrate(40); };
+$('bScreen').onclick=startScreen;
+$('bPhone').onclick=()=>startPhone('');
+const pre=new URLSearchParams(location.search).get('c'); if(pre) startPhone(pre.toUpperCase());
+</script>
+</body>
+</html>

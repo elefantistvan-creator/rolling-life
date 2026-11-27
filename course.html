@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>Tray – course</title>
+<style>
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%;background:#0d1117;color:#e8ecf5;font:15px/1.4 system-ui,sans-serif;overflow:hidden}
+  .wrap{height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;padding:16px;text-align:center}
+  h1{font-size:22px}
+  button{font:inherit;font-size:18px;padding:14px 22px;border:0;border-radius:12px;background:#c8862e;color:#fff;min-width:220px}
+  button.alt{background:#2a3140}
+  input{font:inherit;font-size:28px;letter-spacing:8px;text-align:center;width:200px;padding:10px;border-radius:12px;border:2px solid #2a3140;background:#161b24;color:#fff;text-transform:uppercase}
+  .muted{color:#8b95a8;font-size:13px}
+  .code{font-size:56px;font-weight:700;letter-spacing:12px}
+  #qr img{background:#fff;padding:8px;border-radius:8px}
+  .hidden{display:none!important}
+  #screen{position:fixed;inset:0}
+  #cv{position:absolute;inset:0;width:100%;height:100%}
+  #hud{position:absolute;left:14px;top:10px;font:14px/1.6 ui-monospace,monospace;color:#9aa6bd;white-space:pre;pointer-events:none}
+  #big{position:absolute;left:0;right:0;top:8%;text-align:center;font-size:44px;font-weight:800;pointer-events:none;opacity:0;transition:opacity .6s}
+  #pad{width:100%;flex:1;border-radius:18px;background:#161b24;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:10px}
+  #pad .big2{font-size:40px;font-weight:800}
+</style>
+</head>
+<body>
+<div id="pick" class="wrap">
+  <h1>Tray — course</h1>
+  <button id="bScreen">This is the SCREEN</button>
+  <button id="bPhone" class="alt">This is the PHONE</button>
+  <p class="muted">Open on the laptop first, then scan the code with the phone.</p>
+</div>
+<div id="wait" class="wrap hidden">
+  <p class="muted">Code</p>
+  <div class="code" id="codeTxt">····</div>
+  <div id="qr"></div>
+  <p class="muted" id="urlTxt"></p>
+  <p id="sStatus" class="muted">Connecting…</p>
+</div>
+<div id="screen" class="hidden"><canvas id="cv"></canvas><div id="hud"></div><div id="big"></div></div>
+<div id="join" class="wrap hidden">
+  <h1>Enter the code</h1>
+  <input id="codeIn" maxlength="4" autocomplete="off">
+  <button id="bJoin">Connect</button>
+  <p id="jStatus" class="muted"></p>
+</div>
+<div id="ctrl" class="wrap hidden">
+  <div id="pad">
+    <div class="big2">TRAY</div>
+    <div class="muted" id="cInfo">Hold the phone flat in ONE hand, screen up, like a tray.<br>Phone level with the floor = tray level.<br>Look at the big screen, not here.</div>
+  </div>
+  <button id="bZero" class="alt">Re-level (optional)</button>
+</div>
+<script>
+// ---------- relay: same public MQTT brokers as the Gorillas game ----------
+const BROKERS=['wss://broker.emqx.io:8084/mqtt','wss://broker.hivemq.com:8884/mqtt'];
+const ROOT='tray-course/v1/';
+let role='', code='', clients=[], onMsg=()=>{};
+const $=id=>document.getElementById(id);
+const show=id=>{ for(const s of ['pick','wait','screen','join','ctrl']) $(s).classList.toggle('hidden',s!==id); };
+function loadScript(src,cb,err){ const s=document.createElement('script'); s.src=src; s.onload=cb; s.onerror=err; document.head.appendChild(s); }
+function inbox(){ return ROOT+code+(role==='screen'?'/s':'/c'); }
+function outbox(){ return ROOT+code+(role==='screen'?'/c':'/s'); }
+let pc=null, dc=null, path='relay';
+function send(m,qos){ const t=JSON.stringify(m);
+  if(dc && dc.readyState==='open' && m.t!=='sdp' && m.t!=='ice'){ try{ dc.send(t); if(!qos) return; }catch(e){} }
+  relaySend(t,qos); }
+function relaySend(t,qos){ for(const c of clients){ try{ if(c.connected) c.publish(outbox(),t,{qos:qos||0}); }catch(e){} } }
+function connect(onReady,onErr){
+  const go=()=>{ let ready=false, failed=0;
+    for(const url of BROKERS){
+      let c; try{ c=mqtt.connect(url,{clientId:'pl_'+Math.random().toString(36).slice(2,10),clean:true,reconnectPeriod:3000,connectTimeout:8000}); }catch(e){ failed++; continue; }
+      clients.push(c);
+      c.on('connect',()=>{ c.subscribe(inbox(),{qos:0}); if(!ready){ ready=true; onReady(); } });
+      c.on('message',(tp,p)=>{ try{ const m=JSON.parse(p.toString()); if(m.t==='sdp'||m.t==='ice') rtcSignal(m); else onMsg(m); }catch(e){} });
+      c.on('error',()=>{ if(++failed>=BROKERS.length && !ready) onErr(); });
+    } };
+  if(window.mqtt) go(); else loadScript('https://unpkg.com/mqtt@5.10.1/dist/mqtt.min.js',go,onErr);
+}
+
+// ---------- direct link (WebRTC): the relay only carries the handshake ----------
+function rtcStart(isScreen){
+  if(pc) return;
+  pc=new RTCPeerConnection({iceServers:[{urls:'stun:stun.l.google.com:19302'}]});
+  pc.onicecandidate=e=>{ if(e.candidate) send({t:'ice',c:e.candidate.toJSON()},1); };
+  pc.onconnectionstatechange=()=>{ if(pc.connectionState==='failed'||pc.connectionState==='closed'){ path='relay'; dc=null; } };
+  const wire=ch=>{ dc=ch; ch.onopen=()=>{ path='direct'; checkPath(); }; ch.onclose=()=>{ path='relay'; };
+    ch.onmessage=e=>{ try{ onMsg(JSON.parse(e.data)); }catch(x){} }; };
+  if(isScreen){
+    wire(pc.createDataChannel('ctl',{ordered:false,maxRetransmits:0}));   // late packet = useless, never resend
+    pc.createOffer().then(o=>pc.setLocalDescription(o)).then(()=>send({t:'sdp',d:pc.localDescription.toJSON()},1));
+  } else pc.ondatachannel=e=>wire(e.channel);
+}
+let iceWait=[];
+async function rtcSignal(m){
+  if(m.t==='sdp'){
+    if(m.d.type==='offer'){ if(pc) return; rtcStart(false); }
+    if(!pc || pc.remoteDescription) return;
+    await pc.setRemoteDescription(m.d);
+    for(const c of iceWait){ try{ await pc.addIceCandidate(c); }catch(e){} } iceWait=[];
+    if(m.d.type==='offer'){ const a=await pc.createAnswer(); await pc.setLocalDescription(a); send({t:'sdp',d:pc.localDescription.toJSON()},1); }
+  } else if(m.t==='ice'){
+    if(!pc || !pc.remoteDescription) iceWait.push(m.c); else { try{ await pc.addIceCandidate(m.c); }catch(e){} }
+  }
+}
+let pathKind='';
+async function checkPath(){   // host = same local network, srflx/prflx = through the internet, relay = TURN
+  try{ const r=await pc.getStats(); let pair=null, loc={};
+    r.forEach(v=>{ if(v.type==='candidate-pair' && v.nominated && v.state==='succeeded') pair=v; if(v.type==='local-candidate') loc[v.id]=v; });
+    if(pair && loc[pair.localCandidateId]) pathKind=loc[pair.localCandidateId].candidateType;
+  }catch(e){}
+}
+
+
+
+// ================= SCREEN =================
+const SENS=[0,0.08,0.15,0.25,0.35,0.5];
+const R=1.6, G=981*5/7;
+// course centreline: y = distance along the course (cm), x = centre offset, w = width
+const PATH=[[0,0,50],[80,0,40],[190,0,14],[240,0,13],[300,20,14],[360,-20,14],[420,0,14],[440,0,14],[450,0,45],[495,0,45],[505,0,10],[600,0,9],[610,0,40],[670,0,40]];
+const STOP_Y0=450, GATE_Y=495, FINISH_Y=625, LEN=670;
+const CPS=[20,472];
+const BOXES=(()=>{ let r=7; const rnd=()=>{ r=(r*16807)%2147483647; return r/2147483647; }; const a=[];
+  for(let i=0;i<110;i++){ let x=(rnd()-0.5)*700; if(Math.abs(x)<45) x+=Math.sign(x||1)*45;
+    a.push({x, y:-200+rnd()*(LEN+600), w:10+rnd()*22, h:6+rnd()*45, c:Math.floor(rnd()*3)}); } return a; })();                                   // checkpoints: start, stop pad
+function track(y){ if(y<=0) return [0,50]; for(let i=1;i<PATH.length;i++){ const p=PATH[i-1],q=PATH[i];
+  if(y<=q[0]){ const t=(y-p[0])/(q[0]-p[0]); return [p[1]+(q[1]-p[1])*t, p[2]+(q[2]-p[2])*t]; } } return [0,40]; }
+let st={linked:false,lastHeard:0,lastSeq:-1,b:0,g:0,b0:0,g0:0,tx:0,ty:0,sens:2,ready:false,levelT:0,
+        ball:{x:0,y:20,vx:0,vy:0,z:0,vz:0,falling:false,t:0},cp:0,gateOpen:false,hold:0,falls:0,best:0,t0:0,run:0,done:false,
+        camX:0,camY:45,spots:[[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]],msgs:0,rate:0,rateT:0};
+function startScreen(){
+  role='screen';
+  code=Array.from({length:4},()=>'ABCDEFGHJKMNPQRSTUVWXYZ'[Math.floor(Math.random()*23)]).join('');
+  $('codeTxt').textContent=code;
+  const url=location.origin+location.pathname+'?c='+code; $('urlTxt').textContent=url;
+  loadScript('https://unpkg.com/qrcode-generator@1.4.4/qrcode.js',()=>{ try{ const q=qrcode(0,'M'); q.addData(url); q.make(); $('qr').innerHTML=q.createImgTag(6,0); }catch(e){} },()=>{});
+  show('wait'); onMsg=screenMsg;
+  connect(()=>{ $('sStatus').textContent='Waiting for the phone…'; },()=>{ $('sStatus').textContent='No connection.'; });
+  let last=performance.now();
+  const loop=now=>{ requestAnimationFrame(loop); const dt=Math.min(0.033,(now-last)/1000); last=now; if(st.linked){ step(dt); draw(); } };
+  requestAnimationFrame(loop);
+}
+function screenMsg(m){
+  st.lastHeard=performance.now();
+  if(m.t==='hello'){ if(!st.linked){ st.linked=true; show('screen'); resize(); } send({t:'ok'},1); rtcStart(true); return; }
+  if(m.t==='zero'){ st.zeroNext=true; return; }
+  if(m.t==='o'){ if(m.s<=st.lastSeq && st.lastSeq-m.s<1000) return; st.lastSeq=m.s; st.msgs++;
+    st.b=m.b; st.g=m.g; if(st.zeroNext){ st.zeroNext=false; st.b0=m.b; st.g0=m.g; respawn(); } }
+}
+function respawn(){ const b=st.ball; b.x=track(CPS[st.cp])[0]; b.y=CPS[st.cp]; b.vx=0;b.vy=0;b.z=0;b.vz=0;b.falling=false;
+  st.ready=false; st.levelT=0; st.hold=0; st.camX=b.x; st.camY=b.y; if(st.cp===0){ st.gateOpen=false; st.done=false; st.run=0; } }
+function step(dt){
+  const GAIN=SENS[st.sens];
+  const wx=Math.max(-12,Math.min(12,(st.g-st.g0)*GAIN)), wy=Math.max(-12,Math.min(12,(st.b-st.b0)*GAIN));
+  const a=1-Math.exp(-dt/0.10); st.tx+=(wx-st.tx)*a; st.ty+=(wy-st.ty)*a;
+  const b=st.ball, d=Math.PI/180;
+  if(!st.ready){
+    const lvl=Math.hypot(st.tx,st.ty)/GAIN;
+    st.levelT = lvl<4 ? st.levelT+dt : 0;
+    if(st.levelT>=1){ st.ready=true; flash('GO'); }
+  } else if(!b.falling && !st.done){
+    b.vx+= G*Math.sin(st.tx*d)*dt;
+    b.vy+= -G*Math.sin(st.ty*d)*dt;
+    const f=Math.exp(-0.6*dt); b.vx*=f; b.vy*=f;
+    b.x+=b.vx*dt; b.y+=b.vy*dt; st.run+=dt;
+    // the gate at the end of the stop pad: closed until the ball has rested on the pad
+    if(!st.gateOpen && b.y>GATE_Y-R && b.y<GATE_Y+5){ b.y=GATE_Y-R; b.vy=-Math.abs(b.vy)*0.3; }
+    if(b.y>STOP_Y0+R && b.y<GATE_Y && !st.gateOpen){
+      if(st.cp<1){ st.cp=1; flash('checkpoint'); }
+      const sp=Math.hypot(b.vx,b.vy); st.hold = sp<4 ? st.hold+dt : 0;
+      if(st.hold>=2){ st.gateOpen=true; flash('gate open'); }
+    }
+    if(b.y>=FINISH_Y){ st.done=true; flash('FINISH  '+st.run.toFixed(1)+' s'); st.best=LEN; setTimeout(()=>{ st.cp=0; respawn(); },3000); }
+    const [cx,w]=track(b.y);
+    if(Math.abs(b.x-cx)>w/2 || b.y<0){ b.falling=true; b.t=0; st.falls++; }
+    st.best=Math.max(st.best,b.y);
+  } else if(b.falling){
+    b.t+=dt; b.vz-=981*dt; b.z+=b.vz*dt; b.x+=b.vx*dt; b.y+=b.vy*dt;
+    if(b.t>0.8) respawn();
+  }
+  // fixed viewpoints: the camera holds still over a section, the ball travels across it, then the view moves on
+  // the ball is the focus: the camera follows it softly and keeps it in the lower-middle of the screen
+  if(!b.falling){ st.camX=b.x; st.camY=b.y; }       // the ball is locked to the centre; the course moves around it
+  if(!b.falling){ const wx=-b.vy/R, wy=b.vx/R, ang=Math.hypot(wx,wy)*dt;       // ball spin from rolling
+    if(ang>1e-6){ const ux=wx/Math.hypot(wx,wy), uy=wy/Math.hypot(wx,wy), c=Math.cos(ang), sn=Math.sin(ang);
+      st.spots=st.spots.map(([x,y,z])=>{ const d=ux*x+uy*y;                 // rotate about axis (ux,uy,0)
+        return [x*c+(uy*z)*sn+ux*d*(1-c), y*c+(-ux*z)*sn+uy*d*(1-c), z*c+(ux*y-uy*x)*sn]; }); } }
+  const now=performance.now(); if(now-st.rateT>1000){ st.rate=st.msgs*1000/(now-st.rateT||1); st.msgs=0; st.rateT=now; }
+}
+function flash(t){ const e=$('big'); e.textContent=t; e.style.transition='none'; e.style.opacity=1; requestAnimationFrame(()=>{ e.style.transition='opacity 1.4s'; e.style.opacity=0; }); }
+const cv=$('cv'), cx=cv.getContext('2d'); let W=0,H=0;
+function resize(){ const D=devicePixelRatio||1; W=cv.clientWidth; H=cv.clientHeight; cv.width=W*D; cv.height=H*D; cx.setTransform(D,0,0,D,0,0); }
+addEventListener('resize',resize);
+addEventListener('keydown',e=>{ const n=+e.key; if(n>=1&&n<=5){ st.sens=n; flash('sensitivity '+n); } });
+// world point (x right, y along the course, z up; cm) -> screen; the whole course tilts around the camera point
+function P(x,y,z){
+  const d=Math.PI/180, ax=0, ay=0;
+  x-=st.camX; y-=st.camY;
+  let X=x*Math.cos(ax)+z*Math.sin(ax), Z=-x*Math.sin(ax)+z*Math.cos(ax), Y=y;
+  let Y2=Y*Math.cos(ay)-Z*Math.sin(ay), Z2=Y*Math.sin(ay)+Z*Math.cos(ay);
+  const el=30*d, up=Y2*Math.sin(el)+Z2*Math.cos(el), depth=Y2*Math.cos(el)-Z2*Math.sin(el);
+  const dist=140, k=dist/Math.max(20,dist+depth), S=W/110;
+  return [W/2+X*S*k, H*0.56-up*S*k, k*S];
+}
+function poly(pts,fill){ cx.beginPath(); pts.forEach((p,i)=>i?cx.lineTo(p[0],p[1]):cx.moveTo(p[0],p[1])); cx.closePath(); cx.fillStyle=fill; cx.fill(); }
+function draw(){
+  const g=cx.createLinearGradient(0,0,0,H); g.addColorStop(0,'#06080c'); g.addColorStop(1,'#141a24'); cx.fillStyle=g; cx.fillRect(0,0,W,H);
+  // the deep floor far below (fixed to the world, so it slides past as you move)
+  const FZ=-160; cx.lineWidth=1;
+  for(let gy=Math.floor((st.camY-150)/50)*50; gy<st.camY+700; gy+=50){ const a=P(st.camX-500,gy,FZ), c=P(st.camX+500,gy,FZ);
+    cx.strokeStyle='rgba(80,110,150,'+Math.max(0.05,0.35-(gy-st.camY)/2400)+')'; cx.beginPath(); cx.moveTo(a[0],a[1]); cx.lineTo(c[0],c[1]); cx.stroke(); }
+  for(let gx=Math.floor((st.camX-500)/50)*50; gx<=st.camX+500; gx+=50){ const a=P(gx,st.camY-150,FZ), c=P(gx,st.camY+700,FZ);
+    cx.strokeStyle='rgba(80,110,150,.18)'; cx.beginPath(); cx.moveTo(a[0],a[1]); cx.lineTo(c[0],c[1]); cx.stroke(); }
+  // checker tiles on the floor near the view, then the boxes, far to near
+  for(let ty=Math.floor((st.camY-120)/50)*50; ty<st.camY+600; ty+=50) for(let tx=Math.floor((st.camX-450)/50)*50; tx<st.camX+450; tx+=50){
+    if(((tx+ty)/50)&1) continue; const q1=P(tx,ty,FZ),q2=P(tx+50,ty,FZ),q3=P(tx+50,ty+50,FZ),q4=P(tx,ty+50,FZ);
+    poly([q1,q2,q3,q4],'rgba(60,85,120,'+Math.max(0.04,0.22-(ty-st.camY)/3000)+')'); }
+  const cols=[[70,95,130],[95,80,110],[70,110,100]];
+  BOXES.filter(o=>o.y>st.camY-160&&o.y<st.camY+650&&Math.abs(o.x-st.camX)<520).sort((a,b)=>b.y-a.y).forEach(o=>{
+    const z1=FZ+o.h, hw=o.w/2, fog=Math.max(0.25,1-Math.max(0,o.y-st.camY)/700), c=cols[o.c].map(v=>Math.round(v*fog+15*(1-fog)));
+    const f1=P(o.x-hw,o.y-hw,FZ),f2=P(o.x+hw,o.y-hw,FZ),f3=P(o.x+hw,o.y-hw,z1),f4=P(o.x-hw,o.y-hw,z1);
+    const t3=P(o.x+hw,o.y+hw,z1),t4=P(o.x-hw,o.y+hw,z1);
+    poly([f1,f2,f3,f4],'rgb('+c.join(',')+')');
+    poly([f4,f3,t3,t4],'rgb('+c.map(v=>Math.min(255,v+35)).join(',')+')'); });
+  // pillars holding the course
+  for(let py=Math.ceil((st.camY-90)/60)*60; py<Math.min(LEN,st.camY+420); py+=60){ const [pc]=track(py);
+    const t=P(pc,py,-3), u=P(pc,py,FZ); const wpx=Math.max(1,2.2*t[2]);
+    const gr=cx.createLinearGradient(t[0],t[1],u[0],u[1]); gr.addColorStop(0,'rgba(90,64,36,.9)'); gr.addColorStop(1,'rgba(90,64,36,0)');
+    cx.strokeStyle=gr; cx.lineWidth=wpx; cx.beginPath(); cx.moveTo(t[0],t[1]); cx.lineTo(u[0],u[1]); cx.stroke(); }
+  cx.lineWidth=1;
+  // course strip, far to near (painter's order)
+  const stp=5, y0=Math.max(0,Math.floor((st.camY-90)/stp)*stp), y1=Math.min(LEN,Math.ceil((st.camY+420)/stp)*stp);   // strips locked to the world grid
+  for(let y=y1;y>y0;y-=stp){
+    const ya=Math.max(y0,y-stp), [ca,wa]=track(ya), [cb,wb]=track(y);
+    const a1=P(ca-wa/2,ya,0),a2=P(ca+wa/2,ya,0),b2=P(cb+wb/2,y,0),b1=P(cb-wb/2,y,0);
+    const s1=P(ca-wa/2,ya,-3),s2=P(ca+wa/2,ya,-3);
+    poly([a1,a2,s2,s1],'#4a3018');                                            // front edge thickness
+    const pad=ya>=STOP_Y0&&ya<GATE_Y, fin=ya>=FINISH_Y;
+    const shade=Math.floor(y/20)%2?1:0.94;
+    const base=pad?[120,150,190]:fin?[230,210,120]:[214,164,104];
+    const fog=Math.max(0.35,1-Math.max(0,y-st.camY-60)/700);
+    poly([a1,a2,b2,b1],'rgb('+base.map(v=>Math.round(v*shade*fog+20*(1-fog))).join(',')+')');
+  }
+  // gate
+  if(st.camY+420>GATE_Y){ const [c,w]=track(GATE_Y-1);
+    const g1=P(c-w/2,GATE_Y,0),g2=P(c+w/2,GATE_Y,0),g3=P(c+w/2,GATE_Y,st.gateOpen?0.6:8),g4=P(c-w/2,GATE_Y,st.gateOpen?0.6:8);
+    poly([g1,g2,g3,g4],st.gateOpen?'rgba(90,210,130,.8)':'rgba(220,70,60,.85)'); }
+  // ball + shadow
+  const b=st.ball;
+  if(!b.falling){ const sh=P(b.x+0.5,b.y-0.5,0); cx.fillStyle='rgba(0,0,0,.35)'; cx.beginPath(); cx.ellipse(sh[0],sh[1],R*sh[2]*1.1,R*sh[2]*0.6,0,0,7); cx.fill(); }
+  const q=P(b.x,b.y,R+b.z), rr=R*q[2];
+  if(q[1]<H+60 && rr>0.5){ const bg=cx.createRadialGradient(q[0]-rr*.35,q[1]-rr*.35,rr*.1,q[0],q[1],rr);
+    bg.addColorStop(0,'#f2f4f8'); bg.addColorStop(1,'#59606e'); cx.fillStyle=bg; cx.beginPath(); cx.arc(q[0],q[1],rr,0,7); cx.fill();
+    const vd=[0,-Math.cos(Math.PI/6),Math.sin(Math.PI/6)];                       // towards the viewer
+    st.spots.forEach((sp,i)=>{ const f=sp[0]*vd[0]+sp[1]*vd[1]+sp[2]*vd[2]; if(f<0.15) return;
+      const m=P(b.x+sp[0]*R*0.98,b.y+sp[1]*R*0.98,R+b.z+sp[2]*R*0.98);
+      cx.fillStyle=i<2?'rgba(170,40,40,'+f+')':'rgba(30,40,60,'+(f*0.8)+')'; cx.beginPath(); cx.arc(m[0],m[1],rr*0.22*f,0,7); cx.fill(); }); }
+  // texts
+  cx.textAlign='center';
+  if(!st.ready && !b.falling){ const lvl=Math.hypot(st.tx,st.ty)/SENS[st.sens];
+    cx.font='bold 30px system-ui'; cx.fillStyle=lvl<4?'#6ad18a':'#e8ecf5';
+    cx.fillText(lvl<4?'hold it…':'Hold the phone level  ('+lvl.toFixed(0)+'°)', W/2, H*0.14);
+    if(lvl<4){ cx.fillStyle='#6ad18a'; cx.fillRect(W/2-100,H*0.14+16,200*Math.min(1,st.levelT),6); } }
+  if(st.ready && !st.gateOpen && b.y>STOP_Y0 && b.y<GATE_Y && !b.falling){
+    cx.font='bold 24px system-ui'; cx.fillStyle='#9cc4ff'; cx.fillText(st.hold>0?'stay still…':'stop here', W/2, H*0.14);
+    cx.fillStyle='#9cc4ff'; cx.fillRect(W/2-100,H*0.14+14,200*Math.min(1,st.hold/2),6); }
+  { const lx=W-90, ly=H-90, rad=60, mx=Math.max(-1,Math.min(1,st.tx/12)), my=Math.max(-1,Math.min(1,st.ty/12));
+    cx.strokeStyle='rgba(200,210,230,.5)'; cx.lineWidth=2; cx.beginPath(); cx.arc(lx,ly,rad,0,7); cx.stroke();
+    cx.beginPath(); cx.arc(lx,ly,rad*0.33,0,7); cx.stroke();
+    cx.fillStyle='rgba(120,220,150,.9)'; cx.beginPath(); cx.arc(lx-mx*rad*0.85, ly-my*rad*0.85, 9,0,7); cx.fill(); cx.lineWidth=1; }  // bubble floats to the high side
+  cx.textAlign='left';
+  const stale=performance.now()-st.lastHeard>1500;
+  $('hud').textContent=(stale?'⚠ no data from the phone\n':'')+
+    'build     7\n'+
+    'course    '+Math.round(Math.max(0,b.y)/LEN*100)+' %\n'+'best      '+Math.round(st.best/LEN*100)+' %\n'+'falls     '+st.falls+'\n'+
+    'time      '+st.run.toFixed(1)+' s\n'+'sens      '+st.sens+'  (keys 1–5)\n'+'link      '+(path==='direct'?'direct':'relay')+' · '+st.rate.toFixed(0)+'/s';
+}
+// ================= PHONE =================
+let ph={ori:null,seq:0,linked:false,last:0};
+function startPhone(pre){ role='phone'; show('join'); if(pre) $('codeIn').value=pre; $('bJoin').onclick=joinPhone; }
+async function joinPhone(){
+  code=$('codeIn').value.trim().toUpperCase(); if(code.length!==4){ $('jStatus').textContent='4 letters.'; return; }
+  try{ if(typeof DeviceOrientationEvent!=='undefined' && DeviceOrientationEvent.requestPermission) await DeviceOrientationEvent.requestPermission(); }catch(e){}
+  addEventListener('deviceorientation',e=>{ if(e.beta==null) return;
+    const a=(((screen.orientation&&screen.orientation.angle)||window.orientation||0)+360)%360;
+    let b=e.beta, g=e.gamma;                       // sensor angles are in the phone's own frame (portrait)
+    if(a===90){ [b,g]=[-e.gamma, e.beta]; }        // landscape, top of the phone to the left
+    else if(a===270){ [b,g]=[e.gamma,-e.beta]; }   // landscape, top of the phone to the right
+    else if(a===180){ [b,g]=[-e.beta,-e.gamma]; }
+    ph.ori={b,g,a}; });
+  setInterval(()=>{ if(!ph.linked || !ph.ori) return; const now=performance.now(); if(now-ph.last<33) return;
+    ph.last=Math.max(ph.last+33,now-33);                                                         // steady ~30 per second
+    send({t:'o',s:ph.seq++,b:+ph.ori.b.toFixed(2),g:+ph.ori.g.toFixed(2),a:ph.ori.a}); },8);
+  try{ if(navigator.wakeLock) await navigator.wakeLock.request('screen'); }catch(e){}
+  $('jStatus').textContent='Connecting…';
+  onMsg=m=>{ if(m.t==='ok' && !ph.linked){ ph.linked=true; show('ctrl'); if(navigator.vibrate) navigator.vibrate(60); } };
+  connect(()=>{ const hi=()=>{ if(!ph.linked) send({t:'hello'},1); }; hi(); const iv=setInterval(()=>{ ph.linked?clearInterval(iv):hi(); },1200);
+                setTimeout(()=>{ if(!ph.linked) $('jStatus').textContent='No screen with this code.'; },12000); },
+          ()=>{ $('jStatus').textContent='No connection.'; });
+}
+$('bZero').onclick=()=>{ send({t:'zero'},1); if(navigator.vibrate) navigator.vibrate(40); };
+$('bScreen').onclick=startScreen;
+$('bPhone').onclick=()=>startPhone('');
+const pre=new URLSearchParams(location.search).get('c'); if(pre) startPhone(pre.toUpperCase());
+</script>
+</body>
+</html>
