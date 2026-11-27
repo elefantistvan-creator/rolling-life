@@ -46,6 +46,11 @@
 - Utána a játékos elindulhat a másik, helyes úton.
 - Megjegyzés: visszafelé ugyanaz az akadály más próba (a lejtőből emelkedő lesz, a kanyar a másik irányba fordul). Érdemes aszimmetrikus akadályokat tenni a zsákutcákba, hogy a visszaút ne csak ismétlés legyen.
 
+## Térbeli mozgás (ötlet)
+- **Spirál lefelé, fallal:** a motor már tud bármilyen irányú, lejtő darabokat. Kell hozzá a "falas oldal" (a golyó visszapattan).
+- **Lift:** csak akkor indul, ha a golyó megáll rajta (illik a "tudni kell megállni" gondolathoz).
+- Átépítés kell hozzá: egymás feletti szinteknél a golyó alatti legközelebbi padlót kell választani, és a rajzolásnál mélység szerint takarni.
+
 ## Lezárt leágazások (kordonok)
 - A pálya néhol leágazik, mint egy autópálya-kijárat, de a leágazást egy **kordon** zárja le.
 - Minden kordon egyforma, ránézésre nem derül ki, melyik ér valamit.
