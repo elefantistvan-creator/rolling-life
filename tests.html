@@ -161,28 +161,29 @@ function buildPath(pts,PC,SG,o){ o=o||{}; const N=pts.length;
   const side=pts.map((p,i)=>{ const din=has(i-1)?dir(i-1):null, dout=has(i)?dir(i):null, d1=din||dout||[0,1], d2=dout||din||[0,1];
     const n1=[-d1[1],d1[0]], n2=[-d2[1],d2[0]]; let mx=n1[0]+n2[0], my=n1[1]+n2[1]; const ml=Math.hypot(mx,my)||1; mx/=ml; my/=ml;
     const k=(p.w/2)/Math.max(0.35,mx*n1[0]+my*n1[1]); return {L:[p.x-mx*k,p.y-my*k], R:[p.x+mx*k,p.y+my*k]}; });
-  let cum=0;
+  let cum=0; const pl={x:pts.map(p=>p.x),y:pts.map(p=>p.y),c:[0]}; for(let i=1;i<N;i++) pl.c.push(pl.c[i-1]+Math.hypot(pts[i].x-pts[i-1].x,pts[i].y-pts[i-1].y));
   for(let i=1;i<N;i++){ const a=pts[i-1], b=pts[i]; if(b.gap) continue;
     const p=piece(a.x,a.y,b.x,b.y,a.w,b.w,a.h||0,(b.h!=null?b.h:(a.h||0)),b.e?'e':'f');
-    p.L0=side[i-1].L; p.R0=side[i-1].R; p.L1=side[i].L; p.R1=side[i].R; p.quad=true; p.cum=cum; cum+=p.len;
+    p.L0=side[i-1].L; p.R0=side[i-1].R; p.L1=side[i].L; p.R1=side[i].R; p.quad=true; p.cum=cum; cum+=p.len; p.pl=pl; p.s0=pl.c[i-1];
     p.cin=has(i-2)||(i===1&&!!a.join); p.cout=has(i)||(i===N-1&&!!b.join); p.noEdge=Math.min(a.w,b.w)>=30; if(o.fade) p.fade=o.fade; PC.push(p); }
   if(!o.fade && SG) autoSigns(pts,SG,has); }
 // warning signs, worked out from the shape of the path: narrowing, up, down, sharp bend, zig-zag, gap
-function autoSigns(pts,SG,has){ const N=pts.length, H=p=>p.h||0;
+function autoSigns(pts,SG,has){ const N=pts.length, H=p=>p.h||0, C=[0]; for(let i=1;i<N;i++) C.push(C[i-1]+Math.hypot(pts[i].x-pts[i-1].x,pts[i].y-pts[i-1].y));
   const seg=(i)=>{ const a=pts[i], b=pts[i+1], l=Math.hypot(b.x-a.x,b.y-a.y); return {a,b,l,ux:(b.x-a.x)/l,uy:(b.y-a.y)/l}; };
   const turn=(i)=>{ const s1=seg(i-1), s2=seg(i); let d=Math.atan2(s2.uy,s2.ux)-Math.atan2(s1.uy,s1.ux); while(d>Math.PI) d-=2*Math.PI; while(d<-Math.PI) d+=2*Math.PI; return d; };
-  const put=(i,s,type)=>{ if(!has(i)) return; const g=seg(i); s=Math.max(2,Math.min(g.l-2,s)); const f=s/g.l, x=g.a.x+g.ux*s, y=g.a.y+g.uy*s, w=g.a.w+(g.b.w-g.a.w)*f, h=H(g.a)+(H(g.b)-H(g.a))*f;
+  const sharp=(i)=>i>0 && i<N-1 && has(i-1) && has(i) && Math.abs(turn(i))>0.9;
+  const last={};                                                         // one sign per obstacle stretch: same kind again only after 150 cm of something else
+  const put=(i,s,type,grp,at)=>{ if(last[grp]!=null && at-last[grp]<150){ last[grp]=at; return; } last[grp]=at; if(!has(i)) return;
+    const g=seg(i); s=Math.max(2,Math.min(g.l-2,s)); const f=s/g.l, x=g.a.x+g.ux*s, y=g.a.y+g.uy*s, w=g.a.w+(g.b.w-g.a.w)*f, h=H(g.a)+(H(g.b)-H(g.a))*f;
     if(SG.some(o=>Math.hypot(o.x0-x,o.y0-y)<22)) return;
     SG.push({type,x0:x,y0:y,x:x+g.uy*(w/2+1.6),y:y-g.ux*(w/2+1.6),h,ux:g.ux,uy:g.uy}); };
-  const before=(i,type)=>{ if(has(i-1) && pts[i-1].w<30) put(i-1,seg(i-1).l-14,type); else put(i,3,type); };   // a little before point i
-  let skip=-1;
+  const before=(i,type,grp)=>{ if(has(i-1) && pts[i-1].w<30) put(i-1,seg(i-1).l-14,type,grp,C[i]); else put(i,3,type,grp,C[i]); };
   for(let i=0;i<N-1;i++){ if(!has(i)) continue; const a=pts[i], b=pts[i+1];
-    if(i>0 && has(i-1) && i!==skip){ const t=turn(i);
-      if(Math.abs(t)>0.9){ const zz=i+1<N-1 && has(i+1) && Math.abs(turn(i+1))>0.6 && Math.sign(turn(i+1))!==Math.sign(t) && seg(i).l<70;
-        put(i-1,seg(i-1).l-18,zz?'zigzag':(t>0?'turnL':'turnR')); if(zz) skip=i+1; } }
-    if(b.w<a.w*0.8 && b.w<=20) before(i,'narrow');
-    const sl=H(b)-H(a), pv=(i>0&&has(i-1))?H(a)-H(pts[i-1]):0; if(sl && Math.sign(sl)!==Math.sign(pv)) before(i,sl>0?'up':'down');
-    if(i+2<N && pts[i+2].gap) put(i,seg(i).l-18,'gap'); } }
+    if(sharp(i)){ let more=false; for(let j=i+1;j<N-1 && C[j]-C[i]<80;j++) if(sharp(j)) more=true;            // several bends close together = winding road
+      if(last.bend==null || C[i]-last.bend>=150) put(i-1,seg(i-1).l-18,more?'zigzag':(turn(i)>0?'turnL':'turnR'),'bend',C[i]); else last.bend=C[i]; }
+    if(b.w<a.w*0.8 && b.w<=20) before(i,'narrow','narrow');
+    const sl=H(b)-H(a); if(sl) before(i,sl>0?'up':'down','slope');
+    if(i+2<N && pts[i+2].gap) put(i,seg(i).l-18,'gap','gap',C[i+1]); } }
 function PATH(name,kind,pts){ const PC=[], SG=[]; buildPath(pts,PC,SG); return finish({name,kind,PC,signs:SG,start:[pts[0].x,pts[0].y+20]}); }
 // a maze: several paths, cordons (bait = never opens, return = opens from the far side, close = shuts silently behind you) and triggers
 function MAZE(name,paths,cords,trigs){ const PC=[], SG=[]; paths.forEach(p=>buildPath(p.pts,PC,SG,p)); const p0=paths[0].pts;
@@ -279,9 +280,11 @@ function openMenu(){ st.menu=true; const m=$('menu'); m.innerHTML='<h2>Test trac
     c.onclick=()=>loadTrack(i); g.appendChild(c); });
   m.classList.remove('hidden'); $('back').classList.add('hidden'); $('knobs').classList.add('hidden'); }
 function knobs(){ const k=$('knobs'); const rows=[['Sensitivity','sens'],['Steering assist','assist'],['Ramp boost','rampLv'],['Hop length','hopLv']];
-  k.innerHTML='<div class="row"><b>Ball</b>'+Object.keys(MATS).map(m=>'<span style="width:auto;padding:5px 10px" data-m="'+m+'" class="'+(st.mat===m?'on':'')+'">'+MATS[m].name+'</span>').join('')+'</div>'+rows.map(([n,key])=>'<div class="row"><b>'+n+'</b>'+(key==='assist'?[0,1,2,3,4,5,6]:[1,2,3,4,5]).map(v=>'<span data-k="'+key+'" data-v="'+v+'" class="'+(st[key]===v?'on':'')+'">'+v+'</span>').join('')+'</div>').join('');
+  k.innerHTML='<div class="row"><b>Camera</b>'+[['turn','Turns'],['fixed','Fixed']].map(([v,n])=>'<span style="width:auto;padding:5px 10px" data-c="'+v+'" class="'+((st.camMode||'turn')===v?'on':'')+'">'+n+'</span>').join('')+'</div><div class="row"><b>Ball</b>'+Object.keys(MATS).map(m=>'<span style="width:auto;padding:5px 10px" data-m="'+m+'" class="'+(st.mat===m?'on':'')+'">'+MATS[m].name+'</span>').join('')+'</div>'+rows.map(([n,key])=>'<div class="row"><b>'+n+'</b>'+(key==='assist'?[0,1,2,3,4,5,6]:[1,2,3,4,5]).map(v=>'<span data-k="'+key+'" data-v="'+v+'" class="'+(st[key]===v?'on':'')+'">'+v+'</span>').join('')+'</div>').join('');
+  k.querySelectorAll('span[data-c]').forEach(e=>e.onclick=()=>{ st.camMode=e.dataset.c; try{ localStorage.setItem('rl_cam',st.camMode); }catch(x){} if(st.camMode==='fixed'){ st.camA=st.camT=st.ctrlA=0; } knobs(); });
   k.querySelectorAll('span[data-m]').forEach(e=>e.onclick=()=>{ st.mat=e.dataset.m; try{ localStorage.setItem('rl_mat',st.mat); }catch(x){} knobs(); });
   k.querySelectorAll('span[data-k]').forEach(e=>e.onclick=()=>{ st[e.dataset.k]=+e.dataset.v; try{ localStorage.setItem('rl_'+e.dataset.k,e.dataset.v); }catch(x){} knobs(); }); }
+try{ const cm=localStorage.getItem('rl_cam'); if(cm==='fixed'||cm==='turn') st.camMode=cm; }catch(e){}
 try{ const mm=localStorage.getItem('rl_mat'); if(MATS[mm]) st.mat=mm; ['sens','rampLv','hopLv','assist'].forEach(k=>{ const r=localStorage.getItem('rl_'+k); const v=+r; if(r!==null && v>=(k==='assist'?0:1) && v<=(k==='assist'?6:5)) st[k]=v; }); }catch(e){}
 function loadTrack(i){ TR=TRACKS[i]; pickLand(); st.menu=false; st.falls=0; st.wins=0; $('menu').classList.add('hidden'); $('back').classList.remove('hidden'); $('knobs').classList.toggle('hidden',false); knobs(); respawn(); }
 $('back').onclick=openMenu;
@@ -300,7 +303,7 @@ function preview(t,c){ // top-down sketch, start at the bottom
 // ---- physics
 function respawn(){ st.safe=null; const b=st.ball; b.x=TR.start[0]; b.y=TR.start[1]; b.z=R; b.vx=0;b.vy=0;b.vz=0; b.air=false; b.dead=false; b.t=0;
   st.ready=false; st.levelT=0; st.run=0; st.done=false; st.camX=b.x; st.camY=b.y; st.camZ=0;
-  const f=floorAt(b.x,b.y); st.camA=st.camT=f?Math.atan2(f.p.ux,f.p.uy):0; st.revT=0;
+  const f=floorAt(b.x,b.y); st.camA=st.camT=st.ctrlA=(f&&st.camMode!=='fixed')?Math.atan2(f.p.ux,f.p.uy):0; st.camKey=null; st.camSign=1; st.revAcc=0; st.ctrlHold=false;
   st.mz=TR.cords?{cs:TR.cords.map(c=>({state:c.mode==='close'?'hidden':'closed',t:0})),tg:TR.trigs.map(()=>false)}:null; }
 function hop(){ const b=st.ball; if(!st.ready || b.air || b.dead || st.done) return; b.air=true; b.vz=HOP_UP[st.hopLv-1]; b.vx*=HOP_FWD[st.hopLv-1]; b.vy*=HOP_FWD[st.hopLv-1]; st.jumps++; }
 function step(dt){
@@ -317,7 +320,7 @@ function step(dt){
     if(!b.air){
       const f=floorAt(b.x,b.y);
       const M=MATS[st.mat];
-      const fx=Math.sin(st.camA), fy=Math.cos(st.camA), sideA=G*M.acc*Math.sin(st.tx*d), fwdA=-G*M.acc*Math.sin(st.ty*d);   // tilt works the way the screen looks
+      const fx=Math.sin(st.ctrlA||0), fy=Math.cos(st.ctrlA||0), sideA=G*M.acc*Math.sin(st.tx*d), fwdA=-G*M.acc*Math.sin(st.ty*d);   // tilt works the way the screen looks
       b.vx+=(fy*sideA+fx*fwdA)*dt; b.vy+=(-fx*sideA+fy*fwdA)*dt;
       if(f && (f.gx||f.gy)){ const up=(b.vx*f.gx+b.vy*f.gy)>0, lf=(up && TR.kind==='RAMP')?RAMP_LOSS[st.rampLv-1]:1;   // the slope pulls downhill
         b.vx-=G*f.gx*lf*dt; b.vy-=G*f.gy*lf*dt; }
@@ -354,17 +357,25 @@ function step(dt){
         st.spots=st.spots.map(([x,y,z])=>{ const dd=ux*x+uy*y; return [x*c+(uy*z)*sn+ux*dd*(1-c), y*c+(-ux*z)*sn+uy*dd*(1-c), z*c+(ux*y-uy*x)*sn]; }); } }
   }
   if(!b.dead){ st.camX=b.x; st.camY=b.y; st.camZ=(b.air? st.camZ : b.z-R); }
-  // the camera turns to look the way the ball travels along the track (a turn-around only after ~0.7 s of rolling back)
+  // camera: looks along the general direction of the path (30 cm back to 70 cm ahead), so a zig-zag or a sideways nudge does not swing it.
+  // It turns around only after the ball has rolled 35 cm back along the path.
   const fH=!b.dead&&!b.air&&floorAt(b.x,b.y);
-  if(fH){ const u=[fH.p.ux,fH.p.uy], cur=[Math.sin(st.camT),Math.cos(st.camT)], sp=Math.hypot(b.vx,b.vy), dd=(a,c)=>a[0]*c[0]+a[1]*c[1];
-    let cand=dd(u,cur)>=0?u:[-u[0],-u[1]];
-    if(sp>6){ const vd=[b.vx/sp,b.vy/sp], byV=dd(u,vd)>=0?u:[-u[0],-u[1]];
-      if(dd(byV,cur)<-0.3){ st.revT=(st.revT||0)+dt; if(st.revT>0.7) cand=byV; } else { st.revT=0; cand=byV; } } else st.revT=0;
-    st.camT=Math.atan2(cand[0],cand[1]); }
-  let da=(st.camT||0)-(st.camA||0); while(da>Math.PI) da-=2*Math.PI; while(da<-Math.PI) da+=2*Math.PI; st.camA=(st.camA||0)+da*(1-Math.exp(-dt/0.55));
+  if(st.camMode==='fixed'){ st.camT=0; }
+  else if(fH){ const p=fH.p, key=p.pl||TR, sA=p.pl?p.s0+(b.x-p.ax)*p.ux+(b.y-p.ay)*p.uy:b.y, tr=p.pl?trendAt(p.pl,sA):[0,1];
+    if(key!==st.camKey){ st.keyT=(st.newKey===key?st.keyT:0)+dt; st.newKey=key;                              // a new path counts after 0.25 s on it
+      if(st.keyT>0.25 || !st.camKey){ st.camKey=key; st.camS=sA; st.revAcc=0; st.camSign=(tr[0]*Math.sin(st.camT||0)+tr[1]*Math.cos(st.camT||0))>=0?1:-1; } }
+    else { st.newKey=null; st.keyT=0; const ds=(sA-st.camS)*st.camSign; st.camS=sA; st.revAcc=Math.min(0,(st.revAcc||0)+ds); if(st.revAcc<-35){ st.camSign*=-1; st.revAcc=0; } }
+    if(key===st.camKey) st.camT=Math.atan2(tr[0]*st.camSign,tr[1]*st.camSign); }
+  const wrapA=a=>{ while(a>Math.PI) a-=2*Math.PI; while(a<-Math.PI) a+=2*Math.PI; return a; };
+  st.camA=(st.camA||0)+wrapA((st.camT||0)-(st.camA||0))*(1-Math.exp(-dt/0.45));
+  if(st.ctrlHold){ if(Math.hypot(st.tx,st.ty)<5) st.ctrlHold=false; } else if(Math.abs(wrapA((st.camT||0)-(st.ctrlA||0)))>2) st.ctrlHold=true;
+  if(!st.ctrlHold) st.ctrlA=st.camA;
   const now=performance.now(); if(now-st.rateT>1000){ st.rate=st.msgs*1000/(now-st.rateT||1); st.msgs=0; st.rateT=now; }
 }
 // cordons: closed ones stop the ball (it bounces back); triggers shut one silently behind you or open the hidden way out
+function trendAt(pl,s){ const at=(d)=>{ const c=pl.c, n=c.length; d=Math.max(0,Math.min(c[n-1],d)); let i=1; while(i<n-1 && c[i]<d) i++; const f=(d-c[i-1])/((c[i]-c[i-1])||1);
+    return [pl.x[i-1]+(pl.x[i]-pl.x[i-1])*f, pl.y[i-1]+(pl.y[i]-pl.y[i-1])*f]; };
+  const A=at(s-30), B=at(s+70), dx=B[0]-A[0], dy=B[1]-A[1], l=Math.hypot(dx,dy)||1; return [dx/l,dy/l]; }
 function mazeStep(dt){ const z=st.mz; if(!z) return; const b=st.ball;
   TR.trigs.forEach((g,i)=>{ if(z.tg[i] || Math.hypot(b.x-g.x,b.y-g.y)>g.r) return; const c=TR.cords[g.id], cs=z.cs[g.id];
     if(g.act==='close'){ if(Math.hypot(b.x-c.x,b.y-c.y)<35) return; cs.state='closed'; } else if(cs.state==='closed'){ cs.state='lowering'; cs.t=0; } z.tg[i]=true; });
@@ -642,7 +653,7 @@ function drawOverlay(){ const b=st.ball;
     cx.fillStyle='rgba(120,220,150,.9)'; cx.beginPath(); cx.arc(lx-mx*rad*0.85, ly-my*rad*0.85, 9,0,7); cx.fill(); cx.lineWidth=1; }
   cx.textAlign='left';
   const stale=performance.now()-st.lastHeard>1500;
-  $('hud').textContent=(stale?'⚠ no data from the phone\n':'')+'build     13\n'+TR.name+'\n'+'land      '+st.land+' · mood '+(st.mood||0).toFixed(2)+'  (L / K)\n'+'done      '+st.wins+'\n'+'falls     '+st.falls+'\n'+
+  $('hud').textContent=(stale?'⚠ no data from the phone\n':'')+'build     14\n'+TR.name+'\n'+'land      '+st.land+' · mood '+(st.mood||0).toFixed(2)+'  (L / K)\n'+'done      '+st.wins+'\n'+'falls     '+st.falls+'\n'+
     (TR.kind==='HOP'?'hops      '+st.jumps+'\n':'')+'time      '+st.run.toFixed(1)+' s\n'+'link      '+(path==='direct'?'direct':'relay')+' · '+st.rate.toFixed(0)+'/s';
 }
 
