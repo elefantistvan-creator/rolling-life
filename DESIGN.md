@@ -46,6 +46,14 @@
 - Utána a játékos elindulhat a másik, helyes úton.
 - Megjegyzés: visszafelé ugyanaz az akadály más próba (a lejtőből emelkedő lesz, a kanyar a másik irányba fordul). Érdemes aszimmetrikus akadályokat tenni a zsákutcákba, hogy a visszaút ne csak ismétlés legyen.
 
+## Generált pálya (játékosonként vagy naponta más)
+- A program egy kezdőszámból (seed) rakja össze az útvesztőt: elágazás-típusok + akadályok + szabályok.
+- **Akadály-könyvtár nehézségi csoportokba sorolva.** A generátor csak kiválasztja a megfelelő csoportból az adott szinthez illő akadályt.
+- A besorolás mérésen alapul, nem tippen: minden akadályváltozatot a tesztpályákon kipróbálunk (kézzel és a robotpilótával), és az alapján kap szintet.
+- Kombinációk: két akadály együtt nehezebb lehet, mint külön (pl. keskeny + lejtő). Kell egy szabály, hogy mi kerülhet egymás mellé.
+- Minden generált útvesztőt a robotpilóta végigjár, mielőtt a játékos megkapja. Ha a helyes úton nem jut végig, a pálya eldobható.
+- Sorrend: előbb egy kézzel épített próba-útvesztő, utána a generátor.
+
 ## Térbeli mozgás (ötlet)
 - **Spirál lefelé, fallal:** a motor már tud bármilyen irányú, lejtő darabokat. Kell hozzá a "falas oldal" (a golyó visszapattan).
 - **Lift:** csak akkor indul, ha a golyó megáll rajta (illik a "tudni kell megállni" gondolathoz).
