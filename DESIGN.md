@@ -121,7 +121,7 @@ Felületek, körülmények: **beton** (alap), **homok**, **víz**, **szél**.
   - Az ott hozott jó döntés már nem ad újabb minitérképet (nem lehet láncban végiglátni a pályát).
 
 ## Technikai teendők az útvesztőhöz
-- **Forgó kamera:** a kamera most mindig "előre" (+y) néz. Visszafelé haladáskor a haladási irányba kell fordulnia. Ez az első, amit meg kell építeni.
+- **Forgó kamera:** kész (build 13). A kamera a haladás irányába fordul, a billentés mindig a képernyőhöz igazodik. Visszafordulás csak kb. 0,7 s visszagurulás után.
 - Elágazások a pályamotorban (a darabok már bármilyen irányba futhatnak).
 - Kordon: ütközés, csendes nyitás bizonyos feltételre (pl. visszafelé érkezés).
 - Csendes lezárás a golyó mögött.
@@ -145,3 +145,15 @@ Felületek, körülmények: **beton** (alap), **homok**, **víz**, **szél**.
 - Érzékenység 1–5, alap: 3 (60° kézdöntésnél 60° tálcadőlés).
 - Kormányzássegéd: 0–5 a játékba (kedvcsinálónak), 6 csak pályateszthez.
 - Késés: kb. 60–80 ms a mozdulat és a golyó között (30 ms simítás, 60 csomag/s).
+
+## Jelzőtáblák (ötlet és első változat, 2026-11-27)
+- A pálya szélén közúti figyelmeztető táblák: útszűkület, emelkedő, lejtő, éles kanyar (bal/jobb), cikcakk, szakadék / ugrató. Később: erős szél.
+- A táblákat a program a pálya alakjából rakja ki, nem kézzel.
+- A tábla az akadályra figyelmeztet, de azt nem mondja meg, melyik út a jó.
+- Hátulról nézve csak szürke lap.
+- A szűkülést festett szélső csíkok is jelzik, hogy ne lejtőnek látszódjon.
+
+## Első próba-útvesztő (build 13)
+- Csomópont három úttal: balra zsákutca (széles, csalogató eleje), egyenesen a rossz döntés útja, jobbra a jó út (ijesztően keskeny eleje, utána hosszú és könnyű).
+- A rossz út: nehéz szakasz, mögötte csendben lezáródik egy kordon, a végén túl széles szakadék, a túlpart a ködbe vész. Visszafelé rövid, közepes szakasz, és a platformnál kinyílik a rejtett kordonos egérút, amely a jó útra visz.
+- Két csali-kordon (nem nyílik), mögöttük az út a ködbe vész.
