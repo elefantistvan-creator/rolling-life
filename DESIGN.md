@@ -121,7 +121,7 @@ Felületek, körülmények: **beton** (alap), **homok**, **víz**, **szél**.
   - Az ott hozott jó döntés már nem ad újabb minitérképet (nem lehet láncban végiglátni a pályát).
 
 ## Technikai teendők az útvesztőhöz
-- **Forgó kamera:** kész (build 13). A kamera a haladás irányába fordul, a billentés mindig a képernyőhöz igazodik. Visszafordulás csak kb. 0,7 s visszagurulás után.
+- **Forgó kamera:** kész. A kamera a pálya irányát követi (8 cm hátra, 22 cm előre). Megfordulni csak kanyarban fordul, ha a golyó ott 10 cm-t visszafelé gurul; egyenesen és lejtőn visszagurulva soha. Új ágra érve a haladás iránya dönt. Fordulás után az irányítás a régi marad, amíg a telefon vízszintes nem lesz.
 - Elágazások a pályamotorban (a darabok már bármilyen irányba futhatnak).
 - Kordon: ütközés, csendes nyitás bizonyos feltételre (pl. visszafelé érkezés).
 - Csendes lezárás a golyó mögött.
