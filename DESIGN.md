@@ -33,6 +33,12 @@
 - Közben titokban kinyílt egy **könnyű egérút** (kordonos leágazás). Ebben is vannak akadályok, de nem túl nehezek.
 - Az egérút oda vezet, ahová a helyes út vezetett volna. A rossz döntés ára tehát a nehezebb út és az elvesztett életek kockázata, nem az, hogy végleg eltévedsz.
 
+## Szakasz
+- Egy szakasz checkpointtól checkpointig tart, **10–20 perc** játék.
+- **Nem minden szakaszban van döntés**, különben túl egyértelmű lenne, mikor jön elágazás.
+- Felépítés (vázlat): checkpoint (mentés, a golyó visszaáll fára) → nyugodt bevezető → akadályok, néhol döntési pont → az utak összefutnak → következő checkpoint.
+- Nyitott kérdés: halál után hova tér vissza a játékos egy hosszú szakaszon belül.
+
 ## Elágazás-típusok (összefoglaló)
 1. **Hagyományos elágazás:** mindkét út ugyanoda vezet. A helyes a könnyebb, a rossz nehezebb, nehezített feladatokkal.
 2. **Zsákutca:** lásd lent.
