@@ -59,6 +59,7 @@ Felületek, körülmények: **beton** (alap), **homok**, **víz**, **szél**.
 
 - Az üveg pályája lehet egy szlalom: ott nem a leesés a veszély, hanem az ütközés.
 - A (?) mezőket még el kell dönteni.
+- **A fa az alap:** a választott golyó csak a következő szakaszra szól, utána visszaáll fára.
 - **Golyóválasztással kezdődő elágazás:** néhány helyen az elágazás egy golyóválasztás. A döntés itt az, hogy melyik anyag illik ahhoz, ami előre jön, csakhogy előre nem látszik minden (köd, csali).
 
 ## Generált pálya (játékosonként vagy naponta más)
