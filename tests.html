@@ -20,6 +20,11 @@
   #cv{position:absolute;inset:0;width:100%;height:100%}
   #hud{position:absolute;left:14px;top:10px;font:14px/1.6 ui-monospace,monospace;color:#9aa6bd;white-space:pre;pointer-events:none}
   #big{position:absolute;left:0;right:0;top:8%;text-align:center;font-size:44px;font-weight:800;pointer-events:none;opacity:0;transition:opacity .6s}
+  #knobs{position:absolute;left:14px;bottom:14px;font:14px system-ui;color:#9aa6bd;text-align:left}
+  #knobs .row{margin:6px 0}
+  #knobs b{display:inline-block;width:130px;font-weight:600}
+  #knobs span{display:inline-block;width:30px;padding:5px 0;margin-right:4px;text-align:center;border-radius:6px;background:#1c2332;cursor:pointer;color:#cfd6e4}
+  #knobs span.on{background:#c8862e;color:#fff}
   #back{position:absolute;right:14px;top:10px;min-width:0;padding:8px 14px;font-size:14px}
   #menu{position:absolute;inset:0;background:#0d1117;overflow:auto;padding:24px;text-align:center}
   #menu h2{margin:6px 0 18px;font-size:24px}
@@ -47,7 +52,7 @@
   <p class="muted" id="urlTxt"></p>
   <p id="sStatus" class="muted">Connecting…</p>
 </div>
-<div id="screen" class="hidden"><canvas id="cv"></canvas><div id="hud"></div><div id="big"></div><button id="back" class="alt hidden">◀ Tracks (M)</button><div id="menu" class="hidden"></div></div>
+<div id="screen" class="hidden"><canvas id="cv"></canvas><div id="hud"></div><div id="big"></div><button id="back" class="alt hidden">◀ Tracks (M)</button><div id="knobs" class="hidden"></div><div id="menu" class="hidden"></div></div>
 <div id="join" class="wrap hidden">
   <h1>Enter the code</h1>
   <input id="codeIn" maxlength="4" autocomplete="off">
@@ -126,6 +131,11 @@ async function checkPath(){   // host = same local network, srflx/prflx = throug
 // ================= SCREEN =================
 const SENS=[0,0.08,0.15,0.25,0.35,0.5];
 const R=1.6, G=981*5/7, GRAV=981;
+// test knobs (1–5), clickable on the screen
+const RAMP_LOSS=[1,0.6,0.35,0.15,0];      // how much the ramp slope slows the ball (1 = real physics, 0 = not at all)
+const RAMP_LIFT=[1,1.25,1.5,1.8,2.1];     // how steeply the lip throws the ball up
+const HOP_UP=[150,180,210,240,270];       // hop: upward speed (cm/s)  -> time in the air
+const HOP_FWD=[1,1.1,1.2,1.35,1.5];       // hop: forward speed multiplier
 // ---- test tracks: segments along the course (y in cm). f = floor piece, g = gap (nothing under), e = finish pad.
 // each floor piece: y0..y1, centre x, width w0->w1, height h0->h1 (cm above the base level)
 function T(name,kind,segs){ let y=0; const S=segs.map(s=>{ const o=Object.assign({x:0,h0:0,h1:0},s); o.y0=y; y+=s.l; o.y1=y; if(o.w1==null) o.w1=o.w; o.h1=(s.h1!=null?s.h1:o.h0); return o; }); return {name,kind,S,L:y}; }
@@ -142,7 +152,7 @@ let TR=TRACKS[0];
 function segAt(y){ for(const s of TR.S){ if(y>=s.y0 && y<s.y1) return s; } return null; }
 function floorAt(x,y){ const s=segAt(y); if(!s || s.t==='g') return null; const t=(y-s.y0)/(s.y1-s.y0);
   const w=s.w+(s.w1-s.w)*t, h=s.h0+(s.h1-s.h0)*t; if(Math.abs(x-s.x)>w/2) return null; return {h, slope:(s.h1-s.h0)/(s.y1-s.y0), s}; }
-let st={linked:false,lastHeard:0,lastSeq:-1,b:0,g:0,b0:0,g0:0,tx:0,ty:0,sens:2,ready:false,levelT:0,menu:true,
+let st={linked:false,lastHeard:0,lastSeq:-1,b:0,g:0,b0:0,g0:0,tx:0,ty:0,sens:2,rampLv:3,hopLv:3,ready:false,levelT:0,menu:true,
         ball:{x:0,y:20,z:R,vx:0,vy:0,vz:0,air:false,dead:false,t:0},falls:0,wins:0,run:0,done:false,
         camX:0,camY:0,msgs:0,rate:0,rateT:0,jumps:0,spots:[[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]]};
 function startScreen(){
@@ -172,10 +182,14 @@ function openMenu(){ st.menu=true; const m=$('menu'); m.innerHTML='<h2>Test trac
     const cv2=document.createElement('canvas'); cv2.width=240; cv2.height=150; preview(t,cv2);
     c.appendChild(cv2); const n=document.createElement('div'); n.className='nm'; n.textContent=t.name; c.appendChild(n);
     c.onclick=()=>loadTrack(i); g.appendChild(c); });
-  m.classList.remove('hidden'); $('back').classList.add('hidden'); }
-function loadTrack(i){ TR=TRACKS[i]; st.menu=false; st.falls=0; st.wins=0; $('menu').classList.add('hidden'); $('back').classList.remove('hidden'); respawn(); }
+  m.classList.remove('hidden'); $('back').classList.add('hidden'); $('knobs').classList.add('hidden'); }
+function knobs(){ const k=$('knobs'); const rows=[['Sensitivity','sens'],['Ramp boost','rampLv'],['Hop length','hopLv']];
+  k.innerHTML=rows.map(([n,key])=>'<div class="row"><b>'+n+'</b>'+[1,2,3,4,5].map(v=>'<span data-k="'+key+'" data-v="'+v+'" class="'+(st[key]===v?'on':'')+'">'+v+'</span>').join('')+'</div>').join('');
+  k.querySelectorAll('span').forEach(e=>e.onclick=()=>{ st[e.dataset.k]=+e.dataset.v; try{ localStorage.setItem('rl_'+e.dataset.k,e.dataset.v); }catch(x){} knobs(); }); }
+try{ ['sens','rampLv','hopLv'].forEach(k=>{ const v=+localStorage.getItem('rl_'+k); if(v>=1&&v<=5) st[k]=v; }); }catch(e){}
+function loadTrack(i){ TR=TRACKS[i]; st.menu=false; st.falls=0; st.wins=0; $('menu').classList.add('hidden'); $('back').classList.remove('hidden'); $('knobs').classList.toggle('hidden',false); knobs(); respawn(); }
 $('back').onclick=openMenu;
-addEventListener('keydown',e=>{ const n=+e.key; if(n>=1&&n<=5){ st.sens=n; flash('sensitivity '+n); } if((e.key==='m'||e.key==='M'||e.key==='Escape') && st.linked) openMenu(); });
+addEventListener('keydown',e=>{ const n=+e.key; if(n>=1&&n<=5){ st.sens=n; flash('sensitivity '+n); knobs(); } if((e.key==='m'||e.key==='M'||e.key==='Escape') && st.linked) openMenu(); });
 function preview(t,c){ // top-down sketch: start at the bottom, the run goes up
   const x=c.getContext('2d'); x.fillStyle='#0f141d'; x.fillRect(0,0,c.width,c.height);
   const sy=(c.height-16)/t.L, sx=2.2, cx0=c.width/2;
@@ -190,7 +204,7 @@ function preview(t,c){ // top-down sketch: start at the bottom, the run goes up
 // ---- physics
 function respawn(){ const b=st.ball; b.x=0; b.y=20; b.z=R; b.vx=0;b.vy=0;b.vz=0; b.air=false; b.dead=false; b.t=0;
   st.ready=false; st.levelT=0; st.run=0; st.done=false; st.camX=0; st.camY=20; st.camZ=0; }
-function hop(){ const b=st.ball; if(!st.ready || b.air || b.dead || st.done) return; b.air=true; b.vz=165; st.jumps++; }
+function hop(){ const b=st.ball; if(!st.ready || b.air || b.dead || st.done) return; b.air=true; b.vz=HOP_UP[st.hopLv-1]; b.vx*=HOP_FWD[st.hopLv-1]; b.vy*=HOP_FWD[st.hopLv-1]; st.jumps++; }
 function step(dt){
   const GAIN=SENS[st.sens];
   const wx=Math.max(-12,Math.min(12,(st.g-st.g0)*GAIN)), wy=Math.max(-12,Math.min(12,(st.b-st.b0)*GAIN));
@@ -203,12 +217,12 @@ function step(dt){
     if(!b.air){
       const f=floorAt(b.x,b.y);
       b.vx+= G*Math.sin(st.tx*d)*dt;
-      b.vy+= -G*Math.sin(st.ty*d)*dt - (f?G*f.slope/Math.sqrt(1+f.slope*f.slope):0)*dt;   // tilt + the slope of the ramp itself
+      b.vy+= -G*Math.sin(st.ty*d)*dt - (f?G*f.slope/Math.sqrt(1+f.slope*f.slope)*(f.slope>0?RAMP_LOSS[st.rampLv-1]:1):0)*dt;   // tilt + the slope (uphill loss is tunable)
       const k=Math.exp(-0.35*dt); b.vx*=k; b.vy*=k;
       b.x+=b.vx*dt; b.y+=b.vy*dt;
       const f2=floorAt(b.x,b.y);
       if(f2){ b.z=f2.h+R; b.vz=b.vy*f2.slope; }
-      else { b.air=true; if(f) b.vz=b.vy*f.slope; }              // ran off the end: fly with the speed it had (ramp lip = launch)
+      else { b.air=true; if(f) b.vz=b.vy*f.slope*(f.slope>0?RAMP_LIFT[st.rampLv-1]:1); }              // ran off the end: fly with the speed it had (ramp lip = launch)
     } else {
       const pz=b.z;
       b.vz-=GRAV*dt; b.x+=b.vx*dt; b.y+=b.vy*dt; b.z+=b.vz*dt;
@@ -285,7 +299,7 @@ function draw(){
   cx.textAlign='left';
   const stale=performance.now()-st.lastHeard>1500;
   $('hud').textContent=(stale?'⚠ no data from the phone\n':'')+TR.name+'\n'+'done      '+st.wins+'\n'+'falls     '+st.falls+'\n'+
-    (TR.kind==='HOP'?'hops      '+st.jumps+'\n':'')+'time      '+st.run.toFixed(1)+' s\n'+'sens      '+st.sens+'  (keys 1–5)\n'+'link      '+(path==='direct'?'direct':'relay')+' · '+st.rate.toFixed(0)+'/s';
+    (TR.kind==='HOP'?'hops      '+st.jumps+'\n':'')+'time      '+st.run.toFixed(1)+' s\n'+'link      '+(path==='direct'?'direct':'relay')+' · '+st.rate.toFixed(0)+'/s';
 }
 
 // ================= PHONE =================
