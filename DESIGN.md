@@ -145,6 +145,7 @@ Felületek, körülmények: **beton** (alap), **homok**, **víz**, **szél**.
 - Érzékenység 1–5, alap: 3 (60° kézdöntésnél 60° tálcadőlés).
 - Kormányzássegéd: 0–5 a játékba (kedvcsinálónak), 6 csak pályateszthez.
 - Késés: kb. 60–80 ms a mozdulat és a golyó között (30 ms simítás, 60 csomag/s).
+- Grip 1–5 (mennyire követi a sebesség a dőlést) és Power 1–5 (milyen erősen tol a dőlés). Tesztelve a legjobb: Grip 5, Power 3 (alap).
 
 ## Jelzőtáblák (ötlet és első változat, 2026-11-27)
 - A pálya szélén közúti figyelmeztető táblák: útszűkület, emelkedő, lejtő, éles kanyar (bal/jobb), cikcakk, szakadék / ugrató. Később: erős szél.
