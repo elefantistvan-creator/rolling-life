@@ -165,3 +165,17 @@ Felületek, körülmények: **beton** (alap), **homok**, **víz**, **szél**.
 ## Átlátás a másik útra (nyitott kérdés)
 - Ügyes játékos az egyik útról átlát a másikra, és lesni tud.
 - Lehetséges ellenszerek: több köd az útvesztőben, az utak távolabb egymástól, eltérő magasság (a másik út mélyen alattad vagy fölötted), takaró felhők, hosszabb szakaszok.
+
+## Keretrendszer (build 19)
+- **Napi 3 élet** (a böngészőben tárolva, naponta újra 3). Csak az útvesztőkben számít; a tesztpályákon nincs élet. Plusz élettel legfeljebb 5. Teszthez: R gomb = 3 élet vissza.
+- **Mentőkapuk:** két oszlop és egy híd a pálya fölött, sárga lámpával; ha átgurulsz, zöldre vált és ment. Szakasz eleji kapu: a golyó fára áll vissza. Félúti kapu: a helyet és az anyagot is menti.
+- Leesés után a golyó a legutóbbi mentésnél folytatja; a világ (kordonok, lezárások, jutalmak) nem áll vissza. A szakasz teljesítéséig az ágszínek is maradnak.
+- **Vascsapda:** sötét, szegecselt acéllap az úton. Aki rágurul, annak a fagolyója vassá válik a következő szakasz elejéig.
+- **Jutalmak:** +1 élet, ha a lehetetlen útról visszafordulva átgurulsz a kinyílt egérúton. Minitérkép (7 mp) jó döntésért, csak a következő elágazásig; az ott hozott jó döntés már nem ad újat.
+- **Köd a pályán:** az útvesztőkben a távoli utak is a ködbe vesznek (nehezebb átlesni).
+
+## 1. szakasz – minta (build 19)
+- Nyugodt kezdés → akadályszakasz (szűkülés, kanyargós út, domb) → 1. elágazás: balra hosszú, könnyű, lefelé tartó út (minitérkép jár érte); jobbra rövid, nehéz út vascsapdával. A kettő összefut.
+- Félúti mentés → nyugodt szakasz dombbal → 2. elágazás: balra zsákutca (széles, csalogató, felfelé kanyarog), egyenesen a rossz döntés útja (csendes lezárás, túl széles szakadék, rejtett egérút +1 élettel), jobbra a jó út (ijesztően keskeny eleje).
+- Vége: lépcsőzetes, derékszögű kanyarokkal lefelé, szűkülő befutó, cél.
+- Robotpilóta (6-os segítséggel, 22 cm/s): jó út 163 s, rossz utakon át 203 s. Kézzel, hibákkal kb. 10 perc a cél.

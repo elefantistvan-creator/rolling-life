@@ -186,9 +186,9 @@ function autoSigns(pts,SG,has){ const N=pts.length, H=p=>p.h||0, C=[0]; for(let 
     if(i+2<N && pts[i+2].gap) put(i,seg(i).l-18,'gap','gap',C[i+1]); } }
 function PATH(name,kind,pts){ const PC=[], SG=[]; buildPath(pts,PC,SG); return finish({name,kind,PC,signs:SG,start:[pts[0].x,pts[0].y+20]}); }
 // a maze: several paths, cordons (bait = never opens, return = opens from the far side, close = shuts silently behind you) and triggers
-function MAZE(name,paths,cords,trigs){ const PC=[], SG=[]; paths.forEach((p,bi)=>{ const n0=PC.length; buildPath(p.pts,PC,SG,p); const mine=PC.slice(n0);
+function MAZE(name,paths,cords,trigs,opt){ const PC=[], SG=[]; paths.forEach((p,bi)=>{ const n0=PC.length; buildPath(p.pts,PC,SG,p); const mine=PC.slice(n0); mine.forEach(q=>q.path=bi); if(p.trunk) return;
     let from=0; if(bi===0){ let seen=false; for(let i=0;i<mine.length;i++){ if(!mine[i].noEdge) seen=true; else if(seen){ from=i+1; break; } } } mine.forEach((q,i)=>{ if(i>=from && bi>0||i>=from && from>0) q.br=bi; }); }); const p0=paths[0].pts;
-  return finish({name,kind:'MAZE',PC,signs:SG,cords,trigs,start:[p0[0].x,p0[0].y+20]}); }
+  return finish(Object.assign({name,kind:'MAZE',PC,signs:SG,cords,trigs,cps:[],traps:[],start:[p0[0].x,p0[0].y+20]},opt||{})); }
 function finish(t){ let x0=1e9,x1=-1e9,y0=1e9,y1=-1e9; t.PC.forEach(p=>{ [[p.ax,p.ay],[p.bx,p.by]].forEach(([x,y])=>{ x0=Math.min(x0,x-p.w0);x1=Math.max(x1,x+p.w0);y0=Math.min(y0,y-p.w0);y1=Math.max(y1,y+p.w0); }); });
   t.box=[x0,y0,x1,y1];
   t.SL=[]; t.PC.forEach((p,pi)=>{ const n=Math.max(1,Math.ceil(p.len/5));                       // 5 cm slices, fixed to the world
@@ -199,6 +199,60 @@ function finish(t){ let x0=1e9,x1=-1e9,y0=1e9,y1=-1e9; t.PC.forEach(p=>{ [[p.ax,
                  sm:(s0+s1)/2, cxm:p.ax+p.ux*(s0+s1)/2, cym:p.ay+p.uy*(s0+s1)/2, seed:(pi*7919+k*104729)>>>0, slab:Math.floor((s0+(p.cum!=null?p.cum:pi*13))/20), seam:Math.floor((s1+(p.cum!=null?p.cum:pi*13))/20)>Math.floor((s0+(p.cum!=null?p.cum:pi*13))/20)}); } });
   t.SL.forEach(q=>{ q.tint=0.95+0.09*(((q.slab*2654435761)>>>0)%1000)/1000; });
   return t; }
+// ---- a turtle for drawing paths: heading a in degrees, 0 = +y, 90 = +x; turn(+) = right
+function TUR(x,y,a,w,h){ const t={x,y,a,w,h:h||0}; t.pts=[{x,y,w,h:t.h}];
+  const rad=()=>t.a*Math.PI/180;
+  t.go=(len,w,h,o)=>{ t.x+=Math.sin(rad())*len; t.y+=Math.cos(rad())*len; if(w!=null) t.w=w; if(h!=null) t.h=h; t.pts.push(Object.assign({x:t.x,y:t.y,w:t.w,h:t.h},o||{})); return t; };
+  t.turn=d=>{ t.a+=d; return t; };
+  t.arc=(deg,r,n,w,h)=>{ n=n||Math.max(3,Math.round(Math.abs(deg)/12)); const st=deg/n, seg=2*r*Math.sin(Math.abs(st)*Math.PI/360), h0=t.h, w0=t.w;
+    for(let i=0;i<n;i++){ t.turn(st/2); t.go(seg,w==null?null:w0+(w-w0)*(i+1)/n,h==null?null:h0+(h-h0)*(i+1)/n); t.turn(st/2); } return t; };
+  t.zig=(n,ang,len,w,h)=>{ const h0=t.h; t.turn(ang); for(let i=0;i<n;i++){ t.go(len,w,h==null?null:h0+(h-h0)*(i+1)/n); t.turn(i<n-1?(i%2===0?-2*ang:2*ang):(i%2===0?-ang:ang)); } return t; };
+  t.to=(x,y,w,h,o)=>{ t.a=Math.atan2(x-t.x,y-t.y)*180/Math.PI; return t.go(Math.hypot(x-t.x,y-t.y),w,h,o); };
+  t.at=(back)=>{ const r=rad(); return {x:t.x-Math.sin(r)*(back||0),y:t.y-Math.cos(r)*(back||0),a:t.a,w:t.w,h:t.h}; };   // a spot on the path just walked
+  t.side=(p,dir,off)=>{ const r=p.a*Math.PI/180, rx=Math.cos(r), ry=-Math.sin(r), o=(off==null?p.w/2:off)*dir; return {x:p.x+rx*o,y:p.y+ry*o,a:p.a+90*dir,w:p.w,h:p.h}; };
+  return t; }
+const ux_=a=>Math.sin(a*Math.PI/180), uy_=a=>Math.cos(a*Math.PI/180);
+// ---- Section 1: a hand-made sample section (~10 minutes): calm start, an obstacle stretch, junction 1 (both ways meet again; the short one is hard
+//      and has an iron trap), half-way save, junction 2 (dead end / the wrong way with a hidden way out / the good way), a winding descent to the end.
+function SECTION1(){ const PS=[], CD=[], TG=[], CP=[], TP=[]; const add=(t,o)=>{ PS.push(Object.assign({pts:t.pts},o||{})); return PS.length-1; };
+  // trunk 0: start, calm, then the first obstacle stretch
+  const t0=TUR(0,0,0,40,0); t0.go(60); CP.push({x:0,y:20,ux:0,uy:1,w:40,h:0,kind:'section'});
+  t0.go(30,24).arc(35,120).go(50).arc(-35,120).go(70,22,-8).go(40);
+  const bait1=t0.at(20); t0.go(50).go(40,14).go(50,12).go(25,18).zig(5,35,26,13).go(30,18).go(50,18,2).go(30).go(45,18,-12).go(40,22);
+  t0.go(8,40); t0.go(36,40); const J1=t0.at(18); const i0=add(t0,{trunk:true});
+  { const s=t0.side(bait1,-1,11), b=TUR(s.x,s.y,s.a,14,s.h); b.pts[0].join=true; b.go(80); add(b,{fade:{from:10,len:55}}); CD.push({x:s.x+ux_(s.a)*2,y:s.y+uy_(s.a)*2,ux:ux_(s.a),uy:uy_(s.a),w:14,h:s.h,mode:'bait'}); }
+  // merge plate M1, 540 ahead of J1
+  const M1={x:J1.x,y:J1.y+560,h:-30};
+  // J1 left: the good way, long and easy, goes down
+  const L=TUR(J1.x-20,J1.y,270,18,J1.h); L.pts[0].join=true; L.go(50,20); const X=J1.x, Y=J1.y;
+  [[-70,90,-10],[-100,150,-13],[-145,205,-16],[-170,270,-19],[-172,340,-22],[-150,400,-25],[-115,450,-28],[-90,500,-30],[-90,M1.y-Y]].forEach(([dx,dy,h])=>L.to(X+dx,Y+dy,20,h));
+  L.to(M1.x-20,M1.y,20,-30,{join:true}); const iL=add(L);
+  TG.push({x:J1.x-70,y:J1.y+45,r:14,act:'map',id:'J1',show:[iL,-1]});                     // -1 = filled in below (trunk 1)
+  // J1 right: shorter and hard: narrow, a steep climb, the iron trap, winding, steep down
+  const Rt=TUR(J1.x+20,J1.y,90,12,J1.h); Rt.pts[0].join=true; Rt.go(40,10).turn(-90).go(50,9,6); TP.push({x:Rt.x,y:Rt.y+12,r:3.2}); Rt.go(40,9,6).zig(3,50,24,9).go(160,11,-30);
+  Rt.to(Rt.x,M1.y,11,-30); Rt.to(M1.x+20,M1.y,11,-30,{join:true}); add(Rt);
+  // trunk 1: merge plate, half-way save, a calm stretch with a gentle hill, junction 2
+  const t1=TUR(M1.x,M1.y-18,0,40,-30); t1.go(36); t1.go(10,22); CP.push({x:t1.x,y:t1.y+6,ux:0,uy:1,w:22,h:-30,kind:'half'});
+  t1.go(110,22).arc(-60,140).go(70).arc(60,140).go(60,20,-20).go(40).go(60,20,-30).go(40,22); t1.go(8,40); t1.go(36,40); const J2=t1.at(18); const i1=add(t1,{trunk:true});
+  TG[TG.length-1].show[1]=i1;
+  // J2 left: dead end (wide, inviting; winds and climbs, then nothing)
+  const D=TUR(J2.x-20,J2.y,270,26,J2.h); D.pts[0].join=true; D.go(45,26).turn(90).go(70,22,-30).go(40,14).zig(4,40,26,13).go(70,13,-15).go(30).arc(-80,60).go(60,12); add(D);
+  // J2 straight: the wrong way. Hard, shuts silently behind you, ends at a gap that is too wide; a hidden way out opens on the platform
+  const S=TUR(J2.x,J2.y+18,0,40,J2.h); S.pts[0].join=true; S.go(12,18); const close=S.at(0); S.go(40,18); const shutT=S.at(0); S.go(40,10).go(40,9).zig(4,45,25,9).go(90,12,-50);
+  S.go(8,30); S.go(44,30); const Pp=S.at(22); S.go(25,14).zig(3,30,30,12).go(25,16); const back=S.at(10); S.go(80,30,-50,{gap:true}); S.go(80,30).arc(-30,150).go(150,26); const iS=add(S);
+  CD.push({x:close.x,y:close.y,ux:0,uy:1,w:18,h:J2.h,mode:'close'}); TG.push({x:shutT.x,y:shutT.y,r:12,act:'close',id:CD.length-1});
+  // J2 right: the good way. Scary narrow start, then long and easy, gently down
+  const G=TUR(J2.x+20,J2.y,90,10,J2.h); G.pts[0].join=true; G.go(40,10).go(30,20).turn(-90); const bait2=G.at(0); G.go(360,20,-40); const gy=G.at(0);
+  G.arc(40,200).go(80,20,-48).arc(-40,200).go(80,20,-52);
+  // the end: stepping down round square corners, narrowing, then the finish plate
+  G.turn(90).go(60,18,-56).turn(-90).go(60,16,-60).turn(-90).go(50,14,-62).turn(90).go(60,12,-64).go(40,10).go(10,40,-64,{e:true}).go(30,40,-64,{e:true}); const iG=add(G);
+  TG.push({x:J2.x+90,y:J2.y+60,r:14,act:'map',id:'J2',after:'J1',show:[iG]});
+  { const b=TUR(bait2.x+10,bait2.y+80,90,14,J2.h-10*80/360); b.pts[0].join=true; b.go(80); add(b,{fade:{from:10,len:55}}); CD.push({x:bait2.x+12,y:bait2.y+80,ux:1,uy:0,w:14,h:J2.h-10*80/360,mode:'bait'}); }
+  // the hidden way out: from the platform to the good way (opens once you have seen the gap); passing through it gives a life
+  const exX=gy.x-10, exH=-30-10*((Pp.y-(J2.y))/360);
+  const E=TUR(Pp.x+15,Pp.y,90,16,-50); E.pts[0].join=true; E.go(20).to(exX,Pp.y,14,exH,{join:true}); add(E);
+  CD.push({x:Pp.x+17,y:Pp.y,ux:1,uy:0,w:16,h:-50,mode:'return'}); TG.push({x:back.x,y:back.y,r:16,act:'open',id:CD.length-1}); TG.push({x:Pp.x+38,y:Pp.y,r:8,act:'life'});
+  return MAZE('Section 1 · sample (~10 min)',PS,CD,TG,{cps:CP,traps:TP,fog:420}); }
 const START=[{x:0,y:0,w:40},{x:0,y:70,w:40}];          // the short wide run-up every test track starts with
 function S2(...a){ return START.concat(...a); }
 const TRACKS=[
@@ -236,6 +290,7 @@ const TRACKS=[
     [{x:0,y:214,ux:0,uy:1,w:18,h:0,mode:'close'},{x:17,y:416,ux:1,uy:0,w:16,h:-10,mode:'return'},
      {x:-85,y:200,ux:-1,uy:0,w:14,h:0,mode:'bait'},{x:143,y:200,ux:1,uy:0,w:14,h:0,mode:'bait'}],
     [{x:0,y:275,r:12,act:'close',id:0},{x:0,y:530,r:16,act:'open',id:1}]),
+  SECTION1(),
 ];
 let TR=TRACKS[0];
 function inQuad(x,y,p){ const V=[p.L0,p.R0,p.R1,p.L1]; let sg=0;
@@ -289,9 +344,10 @@ function knobs(){ const k=$('knobs'); const rows=[['Sensitivity','sens'],['Steer
 try{ if(localStorage.getItem('rl_snd')==='0') SND.on=false; }catch(e){}
 try{ const cm=localStorage.getItem('rl_cam'); if(cm==='fixed'||cm==='turn') st.camMode=cm; }catch(e){}
 try{ const mm=localStorage.getItem('rl_mat'); if(MATS[mm]) st.mat=mm; ['sens','rampLv','hopLv','assist'].forEach(k=>{ const r=localStorage.getItem('rl_'+k); const v=+r; if(r!==null && v>=(k==='assist'?0:1) && v<=(k==='assist'?6:5)) st[k]=v; }); }catch(e){}
-function loadTrack(i){ SND.start(); TR=TRACKS[i]; pickLand(); st.menu=false; st.falls=0; st.wins=0; $('menu').classList.add('hidden'); $('back').classList.remove('hidden'); $('knobs').classList.toggle('hidden',false); knobs(); respawn(); }
+function loadTrack(i){ SND.start(); TR=TRACKS[i]; pickLand(); st.menu=false; st.falls=0; st.wins=0; $('menu').classList.add('hidden'); $('back').classList.remove('hidden'); $('knobs').classList.toggle('hidden',false); knobs(); st.run=0; startSection(); }
 $('back').onclick=openMenu;
 addEventListener('keydown',e=>{ const n=+e.key; if(n>=1&&n<=5){ st.sens=n; flash('sensitivity '+n); knobs(); } if((e.key==='m'||e.key==='M'||e.key==='Escape') && st.linked) openMenu();
+  if((e.key==='r'||e.key==='R') && TR.kind==='MAZE'){ LIVES.set(3); st.over=false; flash('lives reset'); respawn(); }
   if(e.key==='l'||e.key==='L'){ st.land=LANDS[(LANDS.indexOf(st.land)+1)%3]; buildLand(); flash(st.land); }
   if(e.key==='k'||e.key==='K'){ st.mood=Math.round(((st.mood||0)+0.25)%1.25*100)/100; makeClouds(); buildLand(); flash('mood '+st.mood); } });
 function preview(t,c){ // top-down sketch, start at the bottom
@@ -322,6 +378,8 @@ const SND={ on:true, ctx:null,
   land(sp){ const wood=st.mat==='wood', v=Math.min(1,0.25+sp/400); this.tone(wood?110:70,0.18,v*0.6,'sine',wood?60:45); this.burst(wood?500:2000,2,0.08,v*0.5); if(!wood) this.tone(1900,0.5,v*0.12,'triangle'); },
   knock(sp){ const v=Math.min(1,0.2+sp/150); this.tone(190,0.12,v*0.5,'triangle',120); this.burst(1400,4,0.05,v*0.4); },
   gate(){ this.tone(220,1.1,0.12,'sawtooth',90); this.burst(400,1,1.1,0.15,'lowpass',120); },
+  save(){ this.tone(523,0.25,0.12,'sine'); this.tone(784,0.4,0.1,'sine',null,0.12); },
+  clank(){ this.tone(140,0.6,0.5,'triangle',90); this.burst(2500,6,0.4,0.4); this.tone(1700,0.9,0.12,'sine'); },
   fall(){ this.burst(1800,1.5,1.0,0.35,'bandpass',200); },
   done(){ this.tone(660,0.35,0.25,'sine'); this.tone(880,0.5,0.25,'sine',null,0.16); this.tone(1320,0.7,0.18,'sine',null,0.32); },
   thunder(){ if(!this.ok()) return; const d=0.3+Math.random()*1.2; setTimeout(()=>{ this.burst(160,0.7,2.8,0.9,'lowpass',45); this.burst(900,0.8,0.25,0.25,'lowpass',200); },d*1000); },
@@ -335,11 +393,18 @@ const SND={ on:true, ctx:null,
     else if(L==='city'){ this.amb.fl.frequency.setTargetAtTime(140,t,0.5); this.amb.g.gain.setTargetAtTime(0.09+0.05*(1-m),t,0.5); this.amb2.fl.frequency.setTargetAtTime(700+500*sw,t,1); this.amb2.fl.Q.value=1.5; this.amb2.g.gain.setTargetAtTime(0.012+0.02*m*sw,t,1); }
     else { this.amb.fl.frequency.setTargetAtTime(500+400*sw,t,0.3); this.amb.g.gain.setTargetAtTime((0.03+0.12*sw*sw)*(1+0.6*(1-m)),t,0.3); this.amb2.g.gain.setTargetAtTime(0,t,0.3); } } };
 // ---- physics
-function respawn(){ st.safe=null; const b=st.ball; b.x=TR.start[0]; b.y=TR.start[1]; b.z=R; b.vx=0;b.vy=0;b.vz=0; b.air=false; b.dead=false; b.t=0; b.fallSnd=false; st.seamKey=null;
-  st.ready=false; st.levelT=0; st.run=0; st.done=false; st.camX=b.x; st.camY=b.y; st.camZ=0;
-  const f=floorAt(b.x,b.y); st.camA=st.camT=st.ctrlA=(f&&st.camMode!=='fixed')?Math.atan2(f.p.ux,f.p.uy):0; st.camKey=null; st.camSign=1; st.revAcc=0; st.ctrlHold=false;
-  const BC=['#4fa3ff','#ffd23f','#5fd36a','#ff7ad9','#ff9a3c','#59e3e3','#b28cff'].sort(()=>Math.random()-0.5); st.brCol=BC;
-  st.mz=TR.cords?{cs:TR.cords.map(c=>({state:c.mode==='close'?'hidden':'closed',t:0})),tg:TR.trigs.map(()=>false)}:null; }
+const LIVES={ get(){ const d=new Date().toDateString(); try{ const o=JSON.parse(localStorage.getItem('rl_lives')||'{}'); if(o.d===d && o.n>=0) return o.n; }catch(e){} return 3; },
+  set(n){ st.lives=Math.max(0,Math.min(5,n)); try{ localStorage.setItem('rl_lives',JSON.stringify({d:new Date().toDateString(),n:st.lives})); }catch(e){} } };
+// a section starts fresh: branch colours, cordons, rewards; the ball is wood again
+function startSection(){ const BC=['#4fa3ff','#ffd23f','#5fd36a','#ff7ad9','#ff9a3c','#59e3e3','#b28cff'].sort(()=>Math.random()-0.5); st.brCol=BC;
+  st.mz=TR.cords?{cs:TR.cords.map(c=>({state:c.mode==='close'?'hidden':'closed',t:0})),tg:TR.trigs.map(()=>false),cp:(TR.cps||[]).map(()=>false)}:null;
+  st.gotMap={}; st.map=null; st.lives=LIVES.get(); st.over=st.lives<=0;
+  if(TR.kind==='MAZE') st.mat='wood'; const f0=floorAt(TR.start[0],TR.start[1]);
+  st.save={x:TR.start[0],y:TR.start[1],a:f0?Math.atan2(f0.p.ux,f0.p.uy):0,mat:st.mat}; respawn(); }
+function respawn(){ st.safe=null; const b=st.ball, sv=st.save||{x:TR.start[0],y:TR.start[1]}; b.x=sv.x; b.y=sv.y; const fz=floorAt(b.x,b.y); b.z=(fz?fz.h:0)+R; if(TR.kind==='MAZE'&&sv.mat){ st.mat=sv.mat; knobs(); } b.vx=0;b.vy=0;b.vz=0; b.air=false; b.dead=false; b.t=0; b.fallSnd=false; st.seamKey=null;
+  st.ready=false; st.levelT=0; st.done=false; st.camX=b.x; st.camY=b.y; st.camZ=b.z-R;
+  const f=fz; st.camA=st.camT=st.ctrlA=st.camMode==='fixed'?0:(sv.a!=null?sv.a:(f?Math.atan2(f.p.ux,f.p.uy):0)); st.camKey=null; st.camSign=1; st.revAcc=0; st.ctrlHold=false;
+}
 function hop(){ const b=st.ball; if(!st.ready || b.air || b.dead || st.done) return; b.air=true; b.vz=HOP_UP[st.hopLv-1]; b.vx*=HOP_FWD[st.hopLv-1]; b.vy*=HOP_FWD[st.hopLv-1]; st.jumps++; }
 function step(dt){
   const dg=Math.PI/180, B=Math.max(-85,Math.min(85,st.b-st.b0)), Gm=st.g-st.g0;
@@ -349,8 +414,8 @@ function step(dt){
   const a=1-Math.exp(-dt/0.03); st.tx+=(wx-st.tx)*a; st.ty+=(wy-st.ty)*a;
   const b=st.ball, d=Math.PI/180;
   if(!st.ready){ const lvl=Math.hypot(st.hx,st.hy); st.levelT=lvl<4?st.levelT+dt:0; if(st.levelT>=1){ st.ready=true; flash('GO'); } }
-  else if(b.dead){ b.t+=dt; b.vz-=GRAV*dt; b.z+=b.vz*dt; b.x+=b.vx*dt; b.y+=b.vy*dt; if(b.t>0.9) respawn(); }
-  else if(!st.done){
+  else if(b.dead){ b.t+=dt; b.vz-=GRAV*dt; b.z+=b.vz*dt; b.x+=b.vx*dt; b.y+=b.vy*dt; if(b.t>0.9 && !st.over) respawn(); }
+  else if(!st.done && !st.over){
     st.run+=dt;
     if(!b.air){
       const f=floorAt(b.x,b.y);
@@ -369,7 +434,7 @@ function step(dt){
         const sF=(b.x-f.p.ax)*f.p.ux+(b.y-f.p.ay)*f.p.uy;
         if(!(sF>f.p.len-0.5 && !f.p.cout)){ b.x-=b.vx*dt; b.y-=b.vy*dt;
           const vn=b.vx*f.p.nx+b.vy*f.p.ny; if(vn*f.q>0){ b.vx-=f.p.nx*vn; b.vy-=f.p.ny*vn; }   // drop the sideways speed that pushes outward
-          b.x+=b.vx*dt; b.y+=b.vy*dt; if(!floorAt(b.x,b.y)){ b.x-=b.vx*dt; b.y-=b.vy*dt; b.vx=0; b.vy=0; } } }
+          b.x+=b.vx*dt; b.y+=b.vy*dt; if(!floorAt(b.x,b.y)){ b.x-=b.vx*dt; b.y-=b.vy*dt; b.vx*=0.5; b.vy*=0.5; } } }
       const f2=floorAt(b.x,b.y); if(f2) st.safe={x:b.x,y:b.y,z:f2.h+R};
       if(f2){ b.z=f2.h+R; b.vz=b.vx*f2.gx+b.vy*f2.gy; }
       else { b.air=true; if(f){ const vz=b.vx*f.gx+b.vy*f.gy; b.vz=vz*(vz>0 && TR.kind==='RAMP'?RAMP_LIFT[st.rampLv-1]:1); } }              // ran off the end: fly with the speed it had (ramp lip = launch)
@@ -382,11 +447,11 @@ function step(dt){
         else { b.x-=b.vx*dt; b.y-=b.vy*dt; b.vx*=-0.2; b.vy*=-0.2; }                // hit the side of a higher piece: bounce back
       }
       if(st.assist===6 && st.safe && b.z<st.safe.z-12){ b.x=st.safe.x; b.y=st.safe.y; b.z=st.safe.z; b.vx=b.vy=b.vz=0; b.air=false; }   // level 6: a missed jump puts it back, no fall
-      else if(b.z<-60){ b.dead=true; b.t=0; st.falls++; }
+      else if(b.z<-60){ b.dead=true; b.t=0; st.falls++; if(TR.kind==='MAZE'){ LIVES.set(st.lives-1); if(st.lives<=0) st.over=true; } }
       if(b.air && !b.fallSnd && b.z<-15 && st.assist!==6){ b.fallSnd=true; SND.fall(); }
     }
     mazeStep(dt);
-    const fe=floorAt(b.x,b.y); if(fe && fe.p.t==='e' && !b.air){ st.done=true; st.wins++; SND.done(); flash('DONE  '+st.run.toFixed(1)+' s'); setTimeout(respawn,1800); }
+    const fe=floorAt(b.x,b.y); if(fe && fe.p.t==='e' && !b.air){ st.done=true; st.wins++; SND.done(); flash((TR.kind==='MAZE'?'SECTION COMPLETE  ':'DONE  ')+st.run.toFixed(1)+' s'); setTimeout(()=>{ if(TR.kind==='MAZE'){ st.run=0; startSection(); } else { st.run=0; respawn(); } },TR.kind==='MAZE'?3500:1800); }
     if(!b.air && !floorAt(b.x,b.y) && !b.dead){ b.air=true; }
     if(!b.air){ const wx2=-b.vy/R, wy2=b.vx/R, ang=Math.hypot(wx2,wy2)*dt;
       if(ang>1e-6){ const ux=wx2/Math.hypot(wx2,wy2), uy=wy2/Math.hypot(wx2,wy2), c=Math.cos(ang), sn=Math.sin(ang);
@@ -420,7 +485,13 @@ function trendAt(pl,s,back,ahead){ back=back==null?8:back; ahead=ahead==null?22:
     return [pl.x[i-1]+(pl.x[i]-pl.x[i-1])*f, pl.y[i-1]+(pl.y[i]-pl.y[i-1])*f]; };
   const A=at(s-back), B=at(s+ahead), dx=B[0]-A[0], dy=B[1]-A[1], l=Math.hypot(dx,dy)||1; return [dx/l,dy/l]; }
 function mazeStep(dt){ const z=st.mz; if(!z) return; const b=st.ball;
-  TR.trigs.forEach((g,i)=>{ if(z.tg[i] || Math.hypot(b.x-g.x,b.y-g.y)>g.r) return; const c=TR.cords[g.id], cs=z.cs[g.id];
+  (TR.cps||[]).forEach((c,i)=>{ if(z.cp[i] || b.air) return; const dx=b.x-c.x, dy=b.y-c.y; if(Math.abs(dx*c.ux+dy*c.uy)>3 || Math.abs(-dx*c.uy+dy*c.ux)>c.w/2) return;
+    z.cp[i]=true; if(c.kind==='section'){ st.mat='wood'; knobs(); } st.save={x:c.x+c.ux*4,y:c.y+c.uy*4,a:Math.atan2(c.ux,c.uy),mat:st.mat}; SND.save(); });
+  (TR.traps||[]).forEach(tp=>{ if(!b.air && st.mat!=='iron' && Math.hypot(b.x-tp.x,b.y-tp.y)<tp.r){ st.mat='iron'; SND.clank(); knobs(); } });
+  TR.trigs.forEach((g,i)=>{ if(z.tg[i] || Math.hypot(b.x-g.x,b.y-g.y)>g.r) return;
+    if(g.act==='life'){ z.tg[i]=true; LIVES.set(st.lives+1); flash('+1 ♥'); SND.done(); return; }
+    if(g.act==='map'){ z.tg[i]=true; if(g.after && st.gotMap[g.after]) return; st.gotMap[g.id]=true; st.map={t0:performance.now()/1000,show:g.show}; return; }
+    const c=TR.cords[g.id], cs=z.cs[g.id];
     if(g.act==='close'){ if(Math.hypot(b.x-c.x,b.y-c.y)<35) return; cs.state='closed'; } else if(cs.state==='closed'){ cs.state='lowering'; cs.t=0; SND.gate(); } z.tg[i]=true; });
   TR.cords.forEach((c,i)=>{ const cs=z.cs[i]; if(cs.state==='lowering'){ cs.t+=dt; if(cs.t>1.2) cs.state='open'; }
     if(!(cs.state==='closed' || (cs.state==='lowering'&&cs.t<0.4)) || b.air && b.z>c.h+R+5) return;
@@ -491,7 +562,7 @@ function draw(){
   const gr=cx.createLinearGradient(0,0,0,H); gr.addColorStop(0,rgb(sky0)); gr.addColorStop(1,rgb(sky1)); cx.fillStyle=gr; cx.fillRect(0,0,W,H);
   if(m>0.4){ const sg=cx.createRadialGradient(W*0.18,-H*0.05,0,W*0.18,-H*0.05,W*0.55); sg.addColorStop(0,'rgba(255,246,220,'+(0.45*(m-0.4))+')'); sg.addColorStop(1,'rgba(255,246,220,0)'); cx.fillStyle=sg; cx.fillRect(0,0,W,H); }
   const FZ=-160, ground=mix(L.ground[0],L.ground[1],m), fogc=sky1, now=performance.now()/1000;
-  const fogD=ly=>Math.min(1,Math.max(0,(ly+60)/(560+m*300)));                             // by distance ahead of the camera; grim = thicker fog
+  const fogD=ly=>Math.min(1,Math.max(0,(ly+60)/((560+m*300)*(TR.fog?TR.fog/520:1))));                             // by distance ahead of the camera; grim = thicker fog
   const fogf=(x,y)=>fogD(LOC(x,y)[1]);
   const fogCol=(c,x,y)=>rgb(mix(c,fogc,fogf(x,y)));
   const cX=st.camX, cY=st.camY, Y0=-170, Y1=700, inV=(x,y,mx)=>{ const l=LOC(x,y); return l[1]>Y0&&l[1]<Y1&&Math.abs(l[0])<(mx||900); };
@@ -585,12 +656,14 @@ function draw(){
     if(bA>0){ cx.globalAlpha=0.25*bA; cx.drawImage(st.cloudImg[c.k],c.q[0]-c.w/2,c.q[1]-c.h/2-2,c.w,c.h); } }
   cx.globalAlpha=1;
   // track slices, far to near
+  const TFOG=ly=>TR.fog?Math.max(0,Math.min(1,(ly-TR.fog*0.45)/(TR.fog*0.55))):0;     // fog over the track itself (mazes): far roads fade out
   const vis=TR.SL.filter(q=>{ if(Math.abs(q.cxm-cX)>500||Math.abs(q.cym-cY)>500) return false; const l=LOC(q.cxm,q.cym); q._ly=l[1]; return l[1]>-100&&l[1]<450&&Math.abs(l[0])<320; }).sort((a,b)=>b._ly-a._ly);
   const bb=st.ball, below=bb.dead || (bb.air && bb.z<-R), bly=LOC(bb.x,bb.y)[1]; st.ballDrawn=false;
   const camPx=EYE[0], camPy=EYE[1];
   for(const q of vis){
     if(below && !st.ballDrawn && q._ly<bly){ drawBall(); st.ballDrawn=true; }
     const fd=q.p.fade, al=fd?1-Math.max(0,Math.min(1,(q.p.cum+q.sm-fd.from)/fd.len)):1; if(al<=0.02) continue; cx.globalAlpha=al;
+    const ff=TFOG(q._ly); if(ff>0.98) continue; const FG=c=>ff>0?mix(c,fogc,ff):c;
     const v=q.v, top=v.map(a=>P(a[0],a[1],a[2]));
     for(let e=0;e<4;e++){ if((e===0 && (q.k>0||q.p.cin)) || (e===2 && (q.k<q.n-1||q.p.cout))) continue;      // no walls between slices of the same piece
       const A=v[e], B=v[(e+1)%4], mx=(A[0]+B[0])/2, my=(A[1]+B[1])/2;
@@ -599,11 +672,11 @@ function draw(){
       if(((camPx-mx)*onx+(camPy-my)*ony)*sgn<=0) continue;                                  // face looks away from the camera
       const nl=Math.hypot(onx,ony)||1, lit=Math.max(0,(onx*LH[0]+ony*LH[1])*sgn/nl);
       const za=Math.min(A[2],0)-4, zb=Math.min(B[2],0)-4, a1=P(A[0],A[1],A[2]), b1=P(B[0],B[1],B[2]);
-      poly([a1,b1,P(B[0],B[1],zb),P(A[0],A[1],za)], rgb(shd([96,100,110],0.5+0.55*lit)));
+      poly([a1,b1,P(B[0],B[1],zb),P(A[0],A[1],za)], rgb(FG(shd([96,100,110],0.5+0.55*lit))));
       cx.strokeStyle='rgba(255,255,255,.22)'; cx.lineWidth=Math.max(1,0.18*a1[2]); cx.beginPath(); cx.moveTo(a1[0],a1[1]); cx.lineTo(b1[0],b1[1]); cx.stroke(); }
     const slope=q.p.h1-q.p.h0, base=q.p.t==='e'?[230,210,120]:(slope?(slope>0?[206,210,218]:[92,96,106]):[146,150,158]);
-    poly(top,rgb(shd(base,q.tint)));
-    if(top[0][2]>2){ let r=q.seed>>>0; const wq=Math.hypot(v[1][0]-v[0][0],v[1][1]-v[0][1]);
+    poly(top,rgb(FG(shd(base,q.tint))));
+    if(top[0][2]>2 && ff<0.5){ let r=q.seed>>>0; const wq=Math.hypot(v[1][0]-v[0][0],v[1][1]-v[0][1]);
       for(let k=0;k<Math.max(3,Math.round(wq/4));k++){ r=(r*1103515245+12345)>>>0; const fu=r/4294967296; r=(r*1103515245+12345)>>>0; const fv=r/4294967296; r=(r*1103515245+12345)>>>0;
         const px=v[0][0]+(v[1][0]-v[0][0])*fu+(v[3][0]-v[0][0])*fv, py=v[0][1]+(v[1][1]-v[0][1])*fu+(v[3][1]-v[0][1])*fv, pz=v[0][2]+(v[3][2]-v[0][2])*fv;
         const pt=P(px,py,pz); cx.fillStyle=(r&1)?'rgba(40,42,48,.4)':'rgba(230,234,240,.3)'; cx.fillRect(pt[0],pt[1],Math.max(1,0.6*pt[2]),Math.max(1,0.4*pt[2])); } }
@@ -612,8 +685,8 @@ function draw(){
     if(slope && q.p.t!=='e' && q.k%3===1 && top[0][2]>1.5) slopeArrows(q,slope>0);
     cx.globalAlpha=1; }
   // painted edge lines, one stroke per piece (a narrowing reads as narrowing, not as a slope)
-  const byCol={};                                          // maze branches: each has its own colour (shuffled every start), from the junction to the end
-  for(const p of new Set(vis.map(q=>q.p))){ if(p.noEdge || p.t==='e' || p.fade) continue; const col=(p.br!=null&&st.brCol)?st.brCol[(p.br-1+st.brCol.length)%st.brCol.length]:'rgba(238,236,222,.6)';
+  const byCol={}, pf=p=>TFOG(LOC(p.ax+p.ux*p.len/2,p.ay+p.uy*p.len/2)[1]);                                          // maze branches: each has its own colour (shuffled every start), from the junction to the end
+  for(const p of new Set(vis.map(q=>q.p))){ if(p.noEdge || p.t==='e' || p.fade || pf(p)>0.5) continue; const col=(p.br!=null&&st.brCol)?st.brCol[(p.br-1+st.brCol.length)%st.brCol.length]:'rgba(238,236,222,.6)';
     const c=pieceCorners(p), I=(a,sd)=>P(a[0]-p.nx*sd*0.9,a[1]-p.ny*sd*0.9,a[2]); (byCol[col]=byCol[col]||[]).push([I(c[1],1),I(c[2],1)],[I(c[0],-1),I(c[3],-1)]); }
   for(const col in byCol){ cx.strokeStyle=col; cx.lineWidth=Math.max(1,(col[0]==='#'?0.45:0.3)*W/110); cx.beginPath(); byCol[col].forEach(([A,B])=>{ cx.moveTo(A[0],A[1]); cx.lineTo(B[0],B[1]); }); cx.stroke(); }
   cx.lineWidth=1;
@@ -621,8 +694,10 @@ function draw(){
   const items=[];
   (TR.signs||[]).forEach(sg=>{ const l=LOC(sg.x,sg.y); if(l[1]>-60&&l[1]<450&&Math.abs(l[0])<320) items.push([l[1],()=>drawSign(sg)]); });
   (TR.cords||[]).forEach((c,i)=>{ const l=LOC(c.x,c.y); if(st.mz && l[1]>-60&&l[1]<450&&Math.abs(l[0])<320) items.push([l[1],()=>drawCord(c,st.mz.cs[i])]); });
+  (TR.cps||[]).forEach((c,i)=>{ const l=LOC(c.x,c.y); if(l[1]>-60&&l[1]<450&&Math.abs(l[0])<320) items.push([l[1],()=>drawGate(c,st.mz&&st.mz.cp[i])]); });
+  (TR.traps||[]).forEach(tp=>{ const l=LOC(tp.x,tp.y); if(l[1]>-60&&l[1]<450&&Math.abs(l[0])<320) items.push([l[1]+tp.r+3,()=>drawTrap(tp)]); });
   if(!st.ballDrawn) items.push([bly+0.01,drawBall]);
-  items.sort((a,b)=>b[0]-a[0]).forEach(it=>it[1]());
+  items.sort((a,b)=>b[0]-a[0]).forEach(it=>{ const ff=TFOG(it[0]); if(ff>0.95) return; cx.globalAlpha=1-ff; it[1](); cx.globalAlpha=1; });
   drawOverlay();
 }
 // road-style warning sign on a post at the right edge: white triangle, red rim, black picture. Seen from behind it is a plain grey plate.
@@ -652,6 +727,16 @@ function drawCord(c,cs){ if(cs.state==='hidden'||cs.state==='open') return; cons
   const n=8; for(let i=0;i<n;i++){ const a=i/n, b=(i+1)/n, X0=A[0]+(B[0]-A[0])*a, Y0=A[1]+(B[1]-A[1])*a, X1=A[0]+(B[0]-A[0])*b, Y1=A[1]+(B[1]-A[1])*b;
     poly([P(X0,Y0,z0),P(X1,Y1,z0),P(X1,Y1,z1),P(X0,Y0,z1)],i%2?'#f2f0ea':'#c8302c'); }
   const t0=P(A[0],A[1],z1), t1=P(B[0],B[1],z1); cx.strokeStyle='rgba(255,255,255,.35)'; cx.lineWidth=1; cx.beginPath(); cx.moveTo(t0[0],t0[1]); cx.lineTo(t1[0],t1[1]); cx.stroke(); }
+// save gate: two posts and a bar over the road; its lamp turns green once it has saved you
+function drawGate(c,done){ const nx=-c.uy, ny=c.ux, hw=c.w/2+1.5, A=[c.x-nx*hw,c.y-ny*hw], B=[c.x+nx*hw,c.y+ny*hw];
+  const a0=P(A[0],A[1],c.h-2), a1=P(A[0],A[1],c.h+11), b0=P(B[0],B[1],c.h-2), b1=P(B[0],B[1],c.h+11); if(a0[2]<0.8) return;
+  cx.strokeStyle='#d8dbe2'; cx.lineWidth=Math.max(1.5,0.8*a0[2]); cx.lineCap='round'; cx.beginPath(); cx.moveTo(a0[0],a0[1]); cx.lineTo(a1[0],a1[1]); cx.lineTo(b1[0],b1[1]); cx.lineTo(b0[0],b0[1]); cx.stroke(); cx.lineCap='butt';
+  const m=P(c.x,c.y,c.h+11), r=Math.max(2,1.3*m[2]); cx.fillStyle=done?'#6ee07f':'#f2c94c'; cx.beginPath(); cx.arc(m[0],m[1],r,0,7); cx.fill();
+  const g=cx.createRadialGradient(m[0],m[1],0,m[0],m[1],r*4); g.addColorStop(0,done?'rgba(110,224,127,.45)':'rgba(242,201,76,.35)'); g.addColorStop(1,'rgba(0,0,0,0)'); cx.fillStyle=g; cx.beginPath(); cx.arc(m[0],m[1],r*4,0,7); cx.fill(); cx.lineWidth=1; }
+// the trap: a dark riveted steel plate in the road; roll over it and the wood ball turns to iron
+function drawTrap(tp){ const f=floorAt(tp.x,tp.y), h=(f?f.h:0)+0.05, r=tp.r, ux=f?f.p.ux:0, uy=f?f.p.uy:1, nx=-uy, ny=ux, C=(a,b)=>P(tp.x+ux*a+nx*b,tp.y+uy*a+ny*b,h);
+  const q=[C(-r,-r),C(-r,r),C(r,r),C(r,-r)]; if(q[0][2]<0.8) return; poly(q,'#3d434d'); cx.strokeStyle='rgba(160,170,185,.5)'; cx.lineWidth=1; cx.beginPath(); q.forEach((p,i)=>i?cx.lineTo(p[0],p[1]):cx.moveTo(p[0],p[1])); cx.closePath(); cx.stroke();
+  for(const [a,b] of [[-0.7,-0.7],[-0.7,0.7],[0.7,0.7],[0.7,-0.7]]){ const p=C(a*r,b*r); cx.fillStyle='#9aa3b0'; cx.beginPath(); cx.arc(p[0],p[1],Math.max(1,0.35*p[2]),0,7); cx.fill(); } }
 // little arrows at both sides of a slope, pointing the way you travel: light on the way up, dark on the way down
 function slopeArrows(q,up){ const p=q.p, v=q.v, f=0.5, cxm=(v[0][0]+v[1][0]+v[2][0]+v[3][0])/4, cym=(v[0][1]+v[1][1]+v[2][1]+v[3][1])/4, h=(v[0][2]+v[2][2])/2;
   const wl=Math.hypot(v[1][0]-v[0][0],v[1][1]-v[0][1]), sz=Math.min(2.4,wl*0.14), off=wl/2-sz*1.3;
@@ -686,6 +771,15 @@ function drawBall(){ const b=st.ball, fl=floorAt(b.x,b.y), M=MATS[st.mat], wood=
   cx.restore();
   cx.strokeStyle='rgba(0,0,0,.35)'; cx.lineWidth=1; cx.beginPath(); cx.arc(X,Y,rr,0,7); cx.stroke();
 }
+// reward: a small map for a few seconds, the paths it was given for, turned so that up = the way the camera looks
+function drawMap(){ const mp=st.map; if(!mp) return; const age=performance.now()/1000-mp.t0; if(age>7){ st.map=null; return; } const al=Math.min(1,age*3,(7-age)*1.5);
+  const ps=TR.PC.filter(p=>mp.show.includes(p.path)); if(!ps.length) return; const S=230, X0=W-S-24, Y0=70;
+  const pts=[]; ps.forEach(p=>pieceCorners(p).forEach(c=>pts.push(LOC(c[0],c[1])))); pts.push([0,0]);
+  const x0=Math.min(...pts.map(p=>p[0])), x1=Math.max(...pts.map(p=>p[0])), y0=Math.min(...pts.map(p=>p[1])), y1=Math.max(...pts.map(p=>p[1])), sc=(S-24)/Math.max(x1-x0,y1-y0,1);
+  const M=(l)=>[X0+12+(l[0]-x0)*sc+((S-24)-(x1-x0)*sc)/2, Y0+S-12-(l[1]-y0)*sc-((S-24)-(y1-y0)*sc)/2];
+  cx.globalAlpha=al; cx.fillStyle='rgba(10,14,20,.72)'; cx.fillRect(X0,Y0,S,S); cx.strokeStyle='rgba(232,200,122,.6)'; cx.strokeRect(X0+0.5,Y0+0.5,S-1,S-1);
+  ps.forEach(p=>{ cx.beginPath(); pieceCorners(p).forEach((c,i)=>{ const q=M(LOC(c[0],c[1])); i?cx.lineTo(q[0],q[1]):cx.moveTo(q[0],q[1]); }); cx.closePath(); cx.fillStyle=p.t==='e'?'#e6cf72':'#c9ced8'; cx.fill(); });
+  const bq=M([0,0]); cx.fillStyle='#e9a25a'; cx.beginPath(); cx.arc(bq[0],bq[1],5,0,7); cx.fill(); cx.globalAlpha=1; }
 function drawOverlay(){ const b=st.ball;
   cx.textAlign='center';
   if(!st.ready && !b.dead){ const lvl=Math.hypot(st.hx||0,st.hy||0); cx.font='bold 30px system-ui'; cx.fillStyle=lvl<4?'#6ad18a':'#e8ecf5';
@@ -694,9 +788,13 @@ function drawOverlay(){ const b=st.ball;
   { const lx=W-90, ly=H-90, rad=60, mx=Math.max(-1,Math.min(1,st.tx/SENS[st.sens])), my=Math.max(-1,Math.min(1,st.ty/SENS[st.sens]));
     cx.strokeStyle='rgba(200,210,230,.5)'; cx.lineWidth=2; cx.beginPath(); cx.arc(lx,ly,rad,0,7); cx.stroke(); cx.beginPath(); cx.arc(lx,ly,rad*0.33,0,7); cx.stroke();
     cx.fillStyle='rgba(120,220,150,.9)'; cx.beginPath(); cx.arc(lx-mx*rad*0.85, ly-my*rad*0.85, 9,0,7); cx.fill(); cx.lineWidth=1; }
+  if(TR.kind==='MAZE'){ cx.font='22px system-ui'; cx.fillStyle='#ff6b7a'; cx.textAlign='center'; cx.fillText('♥'.repeat(st.lives||0)+'♡'.repeat(Math.max(0,3-(st.lives||0))), W/2, 34); }
+  if(st.over){ cx.fillStyle='rgba(8,10,14,.72)'; cx.fillRect(0,0,W,H); cx.fillStyle='#e8ecf5'; cx.textAlign='center'; cx.font='bold 34px system-ui'; cx.fillText('No lives left for today',W/2,H/2-10);
+    cx.font='16px system-ui'; cx.fillStyle='#9aa4b5'; cx.fillText('test: press R to get 3 lives back',W/2,H/2+24); }
+  drawMap();
   cx.textAlign='left';
   const stale=performance.now()-st.lastHeard>1500;
-  $('hud').textContent=(stale?'⚠ no data from the phone\n':'')+'build     18\n'+TR.name+'\n'+'land      '+st.land+' · mood '+(st.mood||0).toFixed(2)+'  (L / K)\n'+'done      '+st.wins+'\n'+'falls     '+st.falls+'\n'+
+  $('hud').textContent=(stale?'⚠ no data from the phone\n':'')+'build     19\n'+TR.name+'\n'+'land      '+st.land+' · mood '+(st.mood||0).toFixed(2)+'  (L / K)\n'+'done      '+st.wins+'\n'+'falls     '+st.falls+'\n'+(TR.kind==='MAZE'?'lives     '+st.lives+'  (R = reset, test)\n':'')+
     (TR.kind==='HOP'?'hops      '+st.jumps+'\n':'')+'time      '+st.run.toFixed(1)+' s\n'+'link      '+(path==='direct'?'direct':'relay')+' · '+st.rate.toFixed(0)+'/s';
 }
 
