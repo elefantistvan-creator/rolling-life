@@ -38,6 +38,8 @@
 - **Nem minden szakaszban van döntés**, különben túl egyértelmű lenne, mikor jön elágazás.
 - Felépítés (vázlat): checkpoint (mentés, a golyó visszaáll fára) → nyugodt bevezető → akadályok, néhol döntési pont → az utak összefutnak → következő checkpoint.
 - **A szakasz felénél egy mentés.** Halál után a játékos a legutóbbi mentéshez tér vissza (szakasz eleje vagy fele).
+- A félúti mentés a helyet **és az anyagot** is menti: aki vasként ért oda, vasként folytatja.
+- A golyó a **szakasz eleji checkpointnál** áll vissza fára. A csapdától kapott vas tehát a következő szakasz elejéig marad meg (sérülés, nem eszköz). A választott golyó a választott szakasz végén áll vissza.
 
 ## Elágazás-típusok (összefoglaló)
 1. **Hagyományos elágazás:** mindkét út ugyanoda vezet. A helyes a könnyebb, a rossz nehezebb, nehezített feladatokkal.
