@@ -38,6 +38,7 @@
 2. **Zsákutca:** lásd lent.
 3. **A rossz döntés útja (lehetetlen véggel):** lásd fent.
 4. Mindháromnál érvényes: előre semmi nem jelzi egyértelműen, melyik a helyes (csali).
+- **Arány:** a hagyományos elágazás a leggyakoribb, a zsákutca ritkább, a lehetetlen véggel a legritkább. Különben a játékos minden nehéz útról azt hinné, hogy lehetetlen, és túl korán fordulna vissza.
 
 ## Zsákutca (eldöntve)
 - Közepesen nehéz akadályok, a végén **semmi**.
