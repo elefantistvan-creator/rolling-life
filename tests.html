@@ -138,27 +138,62 @@ const RAMP_LOSS=[1,0.6,0.35,0.15,0];      // how much the ramp slope slows the b
 const RAMP_LIFT=[1,1.25,1.5,1.8,2.1];     // how steeply the lip throws the ball up
 const HOP_UP=[150,180,210,240,270];       // hop: upward speed (cm/s)  -> time in the air
 const HOP_FWD=[1,1.1,1.2,1.35,1.5];       // hop: forward speed multiplier
-const ASSIST_PULL=[0,8,16,28,42,60];      // assist: pull toward the path centre (cm/s² per cm off-centre)
-const ASSIST_CALM=[0,0.4,0.8,1.3,1.9,2.6]; // assist: extra damping of sideways speed
+const ASSIST_PULL=[0,3,6,9,12,16,60];        // assist: pull toward the path centre (cm/s² per cm off-centre); 6 = test helper
+const ASSIST_CALM=[0,0.15,0.3,0.45,0.6,0.8,2.6]; // assist: extra damping of sideways speed
 // ball materials: acc = how strongly it answers the tilt, damp = how fast it loses speed (higher = less "runaway", easier to steer back)
 const MATS={wood:{name:'Wood',acc:2.0,damp:1.0,c0:'#f0c58e',c1:'#8a5528',dot:'rgba(90,50,20,'},
             iron:{name:'Iron',acc:1.0,damp:0.35,c0:'#d9e0ea',c1:'#3e4654',dot:'rgba(150,40,40,'}};
-// ---- test tracks: segments along the course (y in cm). f = floor piece, g = gap (nothing under), e = finish pad.
-// each floor piece: y0..y1, centre x, width w0->w1, height h0->h1 (cm above the base level)
-function T(name,kind,segs){ let y=0; const S=segs.map(s=>{ const o=Object.assign({x:0,h0:0,h1:0},s); o.y0=y; y+=s.l; o.y1=y; if(o.w1==null) o.w1=o.w; o.h1=(s.h1!=null?s.h1:o.h0); return o; }); return {name,kind,S,L:y}; }
-const START={t:'f',l:70,w:40};              // the short run-up every test track starts with
+// ---- tracks are built from straight pieces (any direction) -> real turns, also 90°.
+// piece: from A to B, width w0->w1, height h0->h1, t: 'f' floor / 'e' finish
+function piece(ax,ay,bx,by,w0,w1,h0,h1,t){ const dx=bx-ax, dy=by-ay, len=Math.hypot(dx,dy), ux=dx/len, uy=dy/len;
+  return {ax,ay,bx,by,w0,w1:(w1==null?w0:w1),h0:h0||0,h1:(h1==null?(h0||0):h1),t:t||'f',len,ux,uy,nx:-uy,ny:ux}; }
+// old style: straight segments along +y (used by the ramp / hop tracks)
+function T(name,kind,segs){ let y=0; const PC=[]; segs.forEach(s=>{ const y0=y; y+=s.l; if(s.t==='g') return;
+  PC.push(piece(s.x||0,y0,s.x||0,y,s.w,s.w1,s.h0||0,(s.h1!=null?s.h1:(s.h0||0)),s.t)); }); return finish({name,kind,PC,start:[0,20]}); }
+// path style: a list of points {x,y,w,h}; a point with gap:true leaves the stretch before it empty; e:true makes the stretch before it the finish
+function PATH(name,kind,pts){ const PC=[]; for(let i=1;i<pts.length;i++){ const a=pts[i-1], b=pts[i]; if(b.gap) continue;
+    PC.push(piece(a.x,a.y,b.x,b.y,a.w,b.w,a.h||0,(b.h!=null?b.h:(a.h||0)),b.e?'e':'f'));
+    if(i<pts.length-1 && !pts[i+1].gap){ const c=pts[i+1], d1=Math.atan2(b.y-a.y,b.x-a.x), d2=Math.atan2(c.y-b.y,c.x-b.x);
+      let dd=Math.abs(d2-d1); if(dd>Math.PI) dd=2*Math.PI-dd;
+      if(dd>0.15){ const w=Math.max(b.w,(c.w||b.w)), ux=Math.cos(d1), uy=Math.sin(d1);       // corner plate fills the elbow
+        const jp=piece(b.x-ux*w/2,b.y-uy*w/2,b.x+ux*w/2,b.y+uy*w/2,w,w,b.h||0,b.h||0,'f'); jp.joint=true; PC.push(jp); } } }
+  return finish({name,kind,PC,start:[pts[0].x,pts[0].y+20]}); }
+function finish(t){ let x0=1e9,x1=-1e9,y0=1e9,y1=-1e9; t.PC.forEach(p=>{ [[p.ax,p.ay],[p.bx,p.by]].forEach(([x,y])=>{ x0=Math.min(x0,x-p.w0);x1=Math.max(x1,x+p.w0);y0=Math.min(y0,y-p.w0);y1=Math.max(y1,y+p.w0); }); });
+  t.box=[x0,y0,x1,y1];
+  t.SL=[]; t.PC.forEach((p,pi)=>{ const n=Math.max(1,Math.ceil(p.len/5));                       // 5 cm slices, fixed to the world
+    for(let k=0;k<n;k++){ const s0=p.len*k/n, s1=p.len*(k+1)/n, w0=p.w0+(p.w1-p.w0)*s0/p.len, w1=p.w0+(p.w1-p.w0)*s1/p.len, h0=p.h0+(p.h1-p.h0)*s0/p.len, h1=p.h0+(p.h1-p.h0)*s1/p.len;
+      const c=(s,side,w)=>[p.ax+p.ux*s+p.nx*side*w/2, p.ay+p.uy*s+p.ny*side*w/2];
+      t.SL.push({p,pi,k,n,v:[[...c(s0,-1,w0),h0],[...c(s0,1,w0),h0],[...c(s1,1,w1),h1],[...c(s1,-1,w1),h1]],
+                 cxm:p.ax+p.ux*(s0+s1)/2, cym:p.ay+p.uy*(s0+s1)/2, seed:(pi*7919+k*104729)>>>0, stripe:Math.floor((s0+(pi*13))/20)%2}); } });
+  return t; }
+const START=[{x:0,y:0,w:40},{x:0,y:70,w:40}];          // the short wide run-up every test track starts with
+function S2(...a){ return START.concat(...a); }
 const TRACKS=[
-  T('Ramp 1 · small gap','RAMP',[START,{t:'f',l:100,w:22},{t:'f',l:30,w:22,h0:0,h1:4},{t:'g',l:8},{t:'f',l:60,w:30,h0:-8},{t:'e',l:30,w:40,h0:-8}]),
-  T('Ramp 2 · wide gap','RAMP',[START,{t:'f',l:150,w:22},{t:'f',l:30,w:22,h0:0,h1:5},{t:'g',l:13},{t:'f',l:60,w:30,h0:-16},{t:'e',l:30,w:40,h0:-16}]),
-  T('Ramp 3 · narrow landing','RAMP',[START,{t:'f',l:120,w:22},{t:'f',l:30,w:22,h0:0,h1:4},{t:'g',l:12},{t:'f',l:70,w:11,h0:-10},{t:'e',l:30,w:40,h0:-10}]),
-  T('Hop 1 · small gap','HOP',[START,{t:'f',l:60,w:30},{t:'g',l:16},{t:'f',l:60,w:30},{t:'e',l:30,w:40}]),
-  T('Hop 2 · gap on a narrow path','HOP',[START,{t:'f',l:70,w:13},{t:'g',l:20},{t:'f',l:70,w:13},{t:'e',l:30,w:40}]),
-  T('Hop 3 · double gap','HOP',[START,{t:'f',l:50,w:24},{t:'g',l:15},{t:'f',l:35,w:24},{t:'g',l:18},{t:'f',l:50,w:24},{t:'e',l:30,w:40}]),
+  T('Ramp 1 · small gap','RAMP',[{t:'f',l:70,w:40},{t:'f',l:100,w:22},{t:'f',l:30,w:22,h0:0,h1:4},{t:'g',l:8},{t:'f',l:60,w:30,h0:-8},{t:'e',l:30,w:40,h0:-8}]),
+  T('Ramp 2 · wide gap','RAMP',[{t:'f',l:70,w:40},{t:'f',l:150,w:22},{t:'f',l:30,w:22,h0:0,h1:5},{t:'g',l:13},{t:'f',l:60,w:30,h0:-16},{t:'e',l:30,w:40,h0:-16}]),
+  T('Ramp 3 · narrow landing','RAMP',[{t:'f',l:70,w:40},{t:'f',l:120,w:22},{t:'f',l:30,w:22,h0:0,h1:4},{t:'g',l:12},{t:'f',l:70,w:11,h0:-10},{t:'e',l:30,w:40,h0:-10}]),
+  T('Hop 1 · small gap','HOP',[{t:'f',l:70,w:40},{t:'f',l:60,w:30},{t:'g',l:16},{t:'f',l:60,w:30},{t:'e',l:30,w:40}]),
+  T('Hop 2 · gap on a narrow path','HOP',[{t:'f',l:70,w:40},{t:'f',l:70,w:13},{t:'g',l:20},{t:'f',l:70,w:13},{t:'e',l:30,w:40}]),
+  T('Hop 3 · double gap','HOP',[{t:'f',l:70,w:40},{t:'f',l:50,w:24},{t:'g',l:15},{t:'f',l:35,w:24},{t:'g',l:18},{t:'f',l:50,w:24},{t:'e',l:30,w:40}]),
+  // ---- progressive tracks: easy at the start, hardest at the end
+  PATH('Narrowing road','ROAD',S2([{x:0,y:130,w:30},{x:0,y:190,w:22},{x:0,y:250,w:16},{x:0,y:310,w:12},{x:0,y:370,w:9},{x:0,y:430,w:7},{x:0,y:480,w:6},{x:0,y:510,w:40,e:true},{x:0,y:540,w:40,e:true}])),
+  PATH('Curves to corners','TURN',S2([{x:0,y:110,w:24},{x:10,y:135,w:24},{x:22,y:160,w:22},{x:27,y:185,w:22},{x:22,y:210,w:20},{x:8,y:232,w:20},{x:0,y:250,w:18},  // soft S-curve
+    {x:30,y:290,w:18},{x:-30,y:350,w:16},{x:0,y:390,w:16},                                                   // zig-zag
+    {x:0,y:440,w:18},{x:70,y:440,w:18},{x:70,y:500,w:16},{x:0,y:500,w:14},{x:0,y:560,w:12},               // right angles
+    {x:-60,y:560,w:11},{x:-60,y:610,w:10},{x:-60,y:640,w:40,e:true},{x:-60,y:670,w:40,e:true}])),
+  PATH('Hills','HILL',S2([{x:0,y:120,w:26,h:0},{x:0,y:200,w:26,h:6},{x:0,y:250,w:24,h:6},{x:0,y:320,w:24,h:-4},   // gentle up, gentle down
+    {x:0,y:360,w:20,h:-4},{x:0,y:400,w:18,h:6},{x:0,y:430,w:18,h:6},{x:0,y:470,w:16,h:-8},                         // steeper, shorter
+    {x:0,y:500,w:14,h:-8},{x:0,y:530,w:12,h:4},{x:0,y:600,w:10,h:-16},{x:0,y:660,w:9,h:-16},                       // steep drop onto a narrow flat: brake!
+    {x:0,y:690,w:40,h:-16,e:true},{x:0,y:720,w:40,h:-16,e:true}])),
 ];
 let TR=TRACKS[0];
-function segAt(y){ for(const s of TR.S){ if(y>=s.y0 && y<s.y1) return s; } return null; }
-function floorAt(x,y){ const s=segAt(y); if(!s || s.t==='g') return null; const t=(y-s.y0)/(s.y1-s.y0);
-  const w=s.w+(s.w1-s.w)*t, h=s.h0+(s.h1-s.h0)*t; if(Math.abs(x-s.x)>w/2) return null; return {h, slope:(s.h1-s.h0)/(s.y1-s.y0), s}; }
+// what is under (x,y)? the highest piece that covers it
+function floorAt(x,y){ let best=null;
+  for(const p of TR.PC){ const dx=x-p.ax, dy=y-p.ay, s=dx*p.ux+dy*p.uy; if(s<-0.01||s>p.len+0.01) continue;
+    const q=dx*p.nx+dy*p.ny, t=s/p.len, w=p.w0+(p.w1-p.w0)*t; if(Math.abs(q)>w/2) continue;
+    const h=p.h0+(p.h1-p.h0)*t, rel=(p.joint?1.5:0)+Math.abs(q)/(w/2);                 // same height: prefer the piece whose middle is closest (corner plates last)
+    if(!best || h>best.h+0.01 || (Math.abs(h-best.h)<=0.01 && rel<best.rel)){ const sl=(p.h1-p.h0)/p.len; best={h,gx:p.ux*sl,gy:p.uy*sl,p,q,half:w/2,rel}; } }
+  return best; }
 let st={linked:false,lastHeard:0,lastSeq:-1,b:0,g:0,b0:0,g0:0,tx:0,ty:0,sens:3,rampLv:3,hopLv:3,assist:0,mat:'wood',ready:false,levelT:0,menu:true,
         ball:{x:0,y:20,z:R,vx:0,vy:0,vz:0,air:false,dead:false,t:0},falls:0,wins:0,run:0,done:false,
         camX:0,camY:0,msgs:0,rate:0,rateT:0,jumps:0,spots:[[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]]};
@@ -191,27 +226,24 @@ function openMenu(){ st.menu=true; const m=$('menu'); m.innerHTML='<h2>Test trac
     c.onclick=()=>loadTrack(i); g.appendChild(c); });
   m.classList.remove('hidden'); $('back').classList.add('hidden'); $('knobs').classList.add('hidden'); }
 function knobs(){ const k=$('knobs'); const rows=[['Sensitivity','sens'],['Steering assist','assist'],['Ramp boost','rampLv'],['Hop length','hopLv']];
-  k.innerHTML='<div class="row"><b>Ball</b>'+Object.keys(MATS).map(m=>'<span style="width:auto;padding:5px 10px" data-m="'+m+'" class="'+(st.mat===m?'on':'')+'">'+MATS[m].name+'</span>').join('')+'</div>'+rows.map(([n,key])=>'<div class="row"><b>'+n+'</b>'+(key==='assist'?[0,1,2,3,4,5]:[1,2,3,4,5]).map(v=>'<span data-k="'+key+'" data-v="'+v+'" class="'+(st[key]===v?'on':'')+'">'+v+'</span>').join('')+'</div>').join('');
+  k.innerHTML='<div class="row"><b>Ball</b>'+Object.keys(MATS).map(m=>'<span style="width:auto;padding:5px 10px" data-m="'+m+'" class="'+(st.mat===m?'on':'')+'">'+MATS[m].name+'</span>').join('')+'</div>'+rows.map(([n,key])=>'<div class="row"><b>'+n+'</b>'+(key==='assist'?[0,1,2,3,4,5,6]:[1,2,3,4,5]).map(v=>'<span data-k="'+key+'" data-v="'+v+'" class="'+(st[key]===v?'on':'')+'">'+v+'</span>').join('')+'</div>').join('');
   k.querySelectorAll('span[data-m]').forEach(e=>e.onclick=()=>{ st.mat=e.dataset.m; try{ localStorage.setItem('rl_mat',st.mat); }catch(x){} knobs(); });
   k.querySelectorAll('span[data-k]').forEach(e=>e.onclick=()=>{ st[e.dataset.k]=+e.dataset.v; try{ localStorage.setItem('rl_'+e.dataset.k,e.dataset.v); }catch(x){} knobs(); }); }
-try{ const mm=localStorage.getItem('rl_mat'); if(MATS[mm]) st.mat=mm; ['sens','rampLv','hopLv','assist'].forEach(k=>{ const r=localStorage.getItem('rl_'+k); const v=+r; if(r!==null && v>=(k==='assist'?0:1) && v<=5) st[k]=v; }); }catch(e){}
+try{ const mm=localStorage.getItem('rl_mat'); if(MATS[mm]) st.mat=mm; ['sens','rampLv','hopLv','assist'].forEach(k=>{ const r=localStorage.getItem('rl_'+k); const v=+r; if(r!==null && v>=(k==='assist'?0:1) && v<=(k==='assist'?6:5)) st[k]=v; }); }catch(e){}
 function loadTrack(i){ TR=TRACKS[i]; st.menu=false; st.falls=0; st.wins=0; $('menu').classList.add('hidden'); $('back').classList.remove('hidden'); $('knobs').classList.toggle('hidden',false); knobs(); respawn(); }
 $('back').onclick=openMenu;
 addEventListener('keydown',e=>{ const n=+e.key; if(n>=1&&n<=5){ st.sens=n; flash('sensitivity '+n); knobs(); } if((e.key==='m'||e.key==='M'||e.key==='Escape') && st.linked) openMenu(); });
-function preview(t,c){ // top-down sketch: start at the bottom, the run goes up
+function preview(t,c){ // top-down sketch, start at the bottom
   const x=c.getContext('2d'); x.fillStyle='#0f141d'; x.fillRect(0,0,c.width,c.height);
-  const sy=(c.height-16)/t.L, sx=2.2, cx0=c.width/2;
-  t.S.forEach(s=>{ if(s.t==='g'){ x.fillStyle='rgba(255,90,70,.25)'; x.fillRect(cx0-30,c.height-8-s.y1*sy,60,(s.y1-s.y0)*sy); return; }
-    const hmax=Math.max(s.h0,s.h1), col=s.t==='e'?'#e6cf72':hmax>0?'#f0c48c':'#c9955a';
-    x.fillStyle=col; x.beginPath();
-    x.moveTo(cx0+(s.x-s.w/2)*sx,c.height-8-s.y0*sy); x.lineTo(cx0+(s.x+s.w/2)*sx,c.height-8-s.y0*sy);
-    x.lineTo(cx0+(s.x+s.w1/2)*sx,c.height-8-s.y1*sy); x.lineTo(cx0+(s.x-s.w1/2)*sx,c.height-8-s.y1*sy); x.fill();
-    if(s.h1>s.h0){ x.fillStyle='rgba(0,0,0,.25)'; for(let k=1;k<4;k++){ const yy=c.height-8-(s.y0+(s.y1-s.y0)*k/4)*sy; x.fillRect(cx0-s.w*sx/2,yy,s.w*sx,1.5); } } });
-  x.fillStyle='#fff'; x.beginPath(); x.arc(cx0,c.height-8-20*sy,4,0,7); x.fill();
-  x.font='bold 12px system-ui'; x.fillStyle=t.kind==='RAMP'?'#ffd28a':'#9cc4ff'; x.fillText(t.kind==='RAMP'?'RAMP':'HOP',8,c.height-10); }
+  const [x0,y0,x1,y1]=t.box, sc=Math.min((c.width-20)/(x1-x0),(c.height-20)/(y1-y0)), ox=c.width/2-(x0+x1)/2*sc, oy=c.height-10+y0*sc;
+  const X=v=>ox+v*sc, Y=v=>oy-v*sc;
+  t.SL.forEach(q=>{ const hm=(q.v[0][2]+q.v[2][2])/2, col=q.p.t==='e'?'#e6cf72':(q.p.h0!==q.p.h1?(q.p.h1>q.p.h0?'#c3c8d2':'#7e848f'):(hm>0?'#b8bdc7':hm<0?'#8e939c':'#a3a8b1'));
+    x.fillStyle=col; x.beginPath(); q.v.forEach((v,i)=>i?x.lineTo(X(v[0]),Y(v[1])):x.moveTo(X(v[0]),Y(v[1]))); x.closePath(); x.fill(); });
+  x.fillStyle='#e9a25a'; x.beginPath(); x.arc(X(t.start[0]),Y(t.start[1]),4,0,7); x.fill();
+  x.font='bold 12px system-ui'; x.fillStyle=t.kind==='RAMP'?'#ffd28a':t.kind==='HOP'?'#9cc4ff':'#b7e3a8'; x.fillText(t.kind,8,c.height-8); }
 // ---- physics
-function respawn(){ const b=st.ball; b.x=0; b.y=20; b.z=R; b.vx=0;b.vy=0;b.vz=0; b.air=false; b.dead=false; b.t=0;
-  st.ready=false; st.levelT=0; st.run=0; st.done=false; st.camX=0; st.camY=20; st.camZ=0; }
+function respawn(){ const b=st.ball; b.x=TR.start[0]; b.y=TR.start[1]; b.z=R; b.vx=0;b.vy=0;b.vz=0; b.air=false; b.dead=false; b.t=0;
+  st.ready=false; st.levelT=0; st.run=0; st.done=false; st.camX=b.x; st.camY=b.y; st.camZ=0; }
 function hop(){ const b=st.ball; if(!st.ready || b.air || b.dead || st.done) return; b.air=true; b.vz=HOP_UP[st.hopLv-1]; b.vx*=HOP_FWD[st.hopLv-1]; b.vy*=HOP_FWD[st.hopLv-1]; st.jumps++; }
 function step(dt){
   const dg=Math.PI/180, B=Math.max(-85,Math.min(85,st.b-st.b0)), Gm=st.g-st.g0;
@@ -228,26 +260,29 @@ function step(dt){
       const f=floorAt(b.x,b.y);
       const M=MATS[st.mat];
       b.vx+= G*M.acc*Math.sin(st.tx*d)*dt;
-      b.vy+= -G*M.acc*Math.sin(st.ty*d)*dt - (f?G*f.slope/Math.sqrt(1+f.slope*f.slope)*(f.slope>0?RAMP_LOSS[st.rampLv-1]:1):0)*dt;   // tilt + the slope (uphill loss is tunable)
+      b.vy+= -G*M.acc*Math.sin(st.ty*d)*dt;
+      if(f && (f.gx||f.gy)){ const up=(b.vx*f.gx+b.vy*f.gy)>0, lf=(up && TR.kind==='RAMP')?RAMP_LOSS[st.rampLv-1]:1;   // the slope pulls downhill
+        b.vx-=G*f.gx*lf*dt; b.vy-=G*f.gy*lf*dt; }
       const k=Math.exp(-M.damp*dt); b.vx*=k; b.vy*=k;
-      if(st.assist>0 && f){ const off=b.x-f.s.x, half=(f.s.w+(f.s.w1-f.s.w)*((b.y-f.s.y0)/(f.s.y1-f.s.y0)))/2;
+      if(st.assist>0 && f && !f.p.joint){ const off=f.q, half=f.half, nx=f.p.nx, ny=f.p.ny;
         const edge=Math.max(0,Math.abs(off)/half-0.6)/0.4;                     // 0 in the middle 60 %, rising to 1 at the edge
-        b.vx-= off*ASSIST_PULL[st.assist]*(1+3*edge)*dt; b.vx*=Math.exp(-ASSIST_CALM[st.assist]*dt); }
+        const pull=off*ASSIST_PULL[st.assist]*(1+3*edge)*dt; b.vx-=nx*pull; b.vy-=ny*pull;
+        const vp=b.vx*nx+b.vy*ny, keep=Math.exp(-ASSIST_CALM[st.assist]*dt); b.vx-=nx*vp*(1-keep); b.vy-=ny*vp*(1-keep); }
       b.x+=b.vx*dt; b.y+=b.vy*dt;
       const f2=floorAt(b.x,b.y);
-      if(f2){ b.z=f2.h+R; b.vz=b.vy*f2.slope; }
-      else { b.air=true; if(f) b.vz=b.vy*f.slope*(f.slope>0?RAMP_LIFT[st.rampLv-1]:1); }              // ran off the end: fly with the speed it had (ramp lip = launch)
+      if(f2){ b.z=f2.h+R; b.vz=b.vx*f2.gx+b.vy*f2.gy; }
+      else { b.air=true; if(f){ const vz=b.vx*f.gx+b.vy*f.gy; b.vz=vz*(vz>0 && TR.kind==='RAMP'?RAMP_LIFT[st.rampLv-1]:1); } }              // ran off the end: fly with the speed it had (ramp lip = launch)
     } else {
       const pz=b.z;
       b.vz-=GRAV*dt; b.x+=b.vx*dt; b.y+=b.vy*dt; b.z+=b.vz*dt;
       const f=floorAt(b.x,b.y);
       if(f && b.vz<=0 && b.z-R<=f.h){
         if(pz-R>=f.h-3){ b.z=f.h+R; b.vz=0; b.air=false; b.vx*=0.9; b.vy*=0.9; }   // landed on top
-        else { const s=f.s; b.y=s.y0-R; b.vy=-Math.abs(b.vy)*0.2; }                // hit the side of the next platform
+        else { b.x-=b.vx*dt; b.y-=b.vy*dt; b.vx*=-0.2; b.vy*=-0.2; }                // hit the side of a higher piece: bounce back
       }
       if(b.z<-60){ b.dead=true; b.t=0; st.falls++; }
     }
-    const fe=floorAt(b.x,b.y); if(fe && fe.s.t==='e' && !b.air){ st.done=true; st.wins++; flash('DONE  '+st.run.toFixed(1)+' s'); setTimeout(respawn,1800); }
+    const fe=floorAt(b.x,b.y); if(fe && fe.p.t==='e' && !b.air){ st.done=true; st.wins++; flash('DONE  '+st.run.toFixed(1)+' s'); setTimeout(respawn,1800); }
     if(!b.air && !floorAt(b.x,b.y) && !b.dead){ b.air=true; }
     if(!b.air){ const wx2=-b.vy/R, wy2=b.vx/R, ang=Math.hypot(wx2,wy2)*dt;
       if(ang>1e-6){ const ux=wx2/Math.hypot(wx2,wy2), uy=wy2/Math.hypot(wx2,wy2), c=Math.cos(ang), sn=Math.sin(ang);
@@ -278,32 +313,33 @@ function draw(){
   BOXES.filter(o=>o.y>st.camY-160&&o.y<st.camY+650).sort((a,b)=>b.y-a.y).forEach(o=>{ const z1=FZ+o.h, hw=o.w/2, c=cols[o.c];
     const f1=P(o.x-hw,o.y-hw,FZ),f2=P(o.x+hw,o.y-hw,FZ),f3=P(o.x+hw,o.y-hw,z1),f4=P(o.x-hw,o.y-hw,z1),t3=P(o.x+hw,o.y+hw,z1),t4=P(o.x-hw,o.y+hw,z1);
     poly([f1,f2,f3,f4],'rgb('+c.join(',')+')'); poly([f4,f3,t3,t4],'rgb('+c.map(v=>v+35).join(',')+')'); });
-  // pillars
-  TR.S.forEach(s=>{ if(s.t==='g') return; [s.y0+4,s.y1-4].forEach(py=>{ if(py<st.camY-90||py>st.camY+420) return;
-    const t=P(s.x,py,-3), u=P(s.x,py,FZ); const g2=cx.createLinearGradient(t[0],t[1],u[0],u[1]); g2.addColorStop(0,'rgba(95,100,110,.9)'); g2.addColorStop(1,'rgba(95,100,110,0)');
-    cx.strokeStyle=g2; cx.lineWidth=Math.max(1,2*t[2]); cx.beginPath(); cx.moveTo(t[0],t[1]); cx.lineTo(u[0],u[1]); cx.stroke(); }); });
+  // pillars under each piece
+  TR.PC.forEach(p=>{ const mx=p.ax+p.ux*p.len/2, my=p.ay+p.uy*p.len/2; if(my<st.camY-90||my>st.camY+450||Math.abs(mx-st.camX)>300) return;
+    const t=P(mx,my,Math.min(p.h0,0)-3), u=P(mx,my,FZ); const g2=cx.createLinearGradient(t[0],t[1],u[0],u[1]); g2.addColorStop(0,'rgba(95,100,110,.9)'); g2.addColorStop(1,'rgba(95,100,110,0)');
+    cx.strokeStyle=g2; cx.lineWidth=Math.max(1,2*t[2]); cx.beginPath(); cx.moveTo(t[0],t[1]); cx.lineTo(u[0],u[1]); cx.stroke(); });
   cx.lineWidth=1;
-  // track pieces, far to near, in world-locked 5 cm strips
-  const stp=5, y0=Math.max(0,Math.floor((st.camY-90)/stp)*stp), y1=Math.min(TR.L,Math.ceil((st.camY+420)/stp)*stp);
-  const bb=st.ball, below=bb.dead || (bb.air && bb.z<-R); st.ballDrawn=false;     // fallen into a gap: nearer track pieces must cover it
-  for(let y=y1;y>y0;y-=stp){ const ya=y-stp;
-    if(below && !st.ballDrawn && ya<bb.y){ drawBall(); st.ballDrawn=true; }
-    const s=segAt(ya+0.01); if(!s || s.t==='g') continue;
-    const ta=(ya-s.y0)/(s.y1-s.y0), tb=Math.min(1,(y-s.y0)/(s.y1-s.y0));
-    const wa=s.w+(s.w1-s.w)*ta, wb=s.w+(s.w1-s.w)*tb, ha=s.h0+(s.h1-s.h0)*ta, hb=s.h0+(s.h1-s.h0)*tb;
-    const a1=P(s.x-wa/2,ya,ha),a2=P(s.x+wa/2,ya,ha),b2=P(s.x+wb/2,y,hb),b1=P(s.x-wb/2,y,hb);
-    const za=Math.min(ha,0)-3, zb=Math.min(hb,0)-3;                                                // underside: ramps look solid, low pieces keep their thickness
-    poly([P(s.x-wa/2,ya,ha),P(s.x-wb/2,y,hb),P(s.x-wb/2,y,zb),P(s.x-wa/2,ya,za)],'#4b4f57');
-    poly([P(s.x+wa/2,ya,ha),P(s.x+wb/2,y,hb),P(s.x+wb/2,y,zb),P(s.x+wa/2,ya,za)],'#4b4f57');
-    poly([a1,a2,P(s.x+wa/2,ya,za),P(s.x-wa/2,ya,za)],'#3b3e45');                                    // near edge
-    const shade=Math.floor(y/20)%2?1:0.94, base=s.t==='e'?[230,210,120]:(s.h1!==s.h0?[176,180,188]:[142,146,154]);
-    poly([a1,a2,b2,b1],'rgb('+base.map(v=>Math.round(v*shade)).join(',')+')');
-    if(a1[2]>2){ const n=Math.round(ya/stp); let r=(n*2654435761)>>>0;                     // speckles: pseudo-random but fixed per strip
-      for(let k=0;k<Math.max(3,Math.round(wa/4));k++){ r=(r*1103515245+12345)>>>0; const fx=(r/4294967296-0.5)*wa*0.95; r=(r*1103515245+12345)>>>0; const fy=ya+(r/4294967296)*stp;
-        r=(r*1103515245+12345)>>>0; const dk=r&1; const pt=P(s.x+fx,fy,s.h0+(s.h1-s.h0)*((fy-s.y0)/(s.y1-s.y0)));
-        cx.fillStyle=dk?'rgba(40,42,48,.55)':'rgba(220,224,232,.35)'; cx.fillRect(pt[0],pt[1],Math.max(1,0.7*pt[2]),Math.max(1,0.45*pt[2])); } } }
+  // track slices, far to near
+  const vis=TR.SL.filter(q=>q.cym>st.camY-100 && q.cym<st.camY+450 && Math.abs(q.cxm-st.camX)<320).sort((a,b)=>b.cym-a.cym);
+  const bb=st.ball, below=bb.dead || (bb.air && bb.z<-R); st.ballDrawn=false;
+  const camPx=st.camX, camPy=st.camY-121;
+  for(const q of vis){
+    if(below && !st.ballDrawn && q.cym<bb.y){ drawBall(); st.ballDrawn=true; }
+    const v=q.v, top=v.map(a=>P(a[0],a[1],a[2]));
+    for(let e=0;e<4;e++){ if((e===0 && q.k>0) || (e===2 && q.k<q.n-1)) continue;      // no walls between slices of the same piece
+      const A=v[e], B=v[(e+1)%4], mx=(A[0]+B[0])/2, my=(A[1]+B[1])/2;
+      const ex=B[0]-A[0], ey=B[1]-A[1], onx=ey, ony=-ex;                                   // outward normal (vertices go round the slice)
+      const cxs=(v[0][0]+v[2][0])/2, cys=(v[0][1]+v[2][1])/2, sgn=((mx-cxs)*onx+(my-cys)*ony)>0?1:-1;
+      if(((camPx-mx)*onx+(camPy-my)*ony)*sgn<=0) continue;                                  // face looks away from the camera
+      const za=Math.min(A[2],0)-3, zb=Math.min(B[2],0)-3;
+      poly([P(A[0],A[1],A[2]),P(B[0],B[1],B[2]),P(B[0],B[1],zb),P(A[0],A[1],za)], Math.abs(ony*sgn)>Math.abs(onx*sgn)?'#3b3e45':'#4b4f57'); }
+    const hm=(v[0][2]+v[2][2])/2, base=q.p.t==='e'?[230,210,120]:(q.p.h0!==q.p.h1?(q.p.h1>q.p.h0?[176,180,188]:[120,124,132]):[142,146,154]);
+    const shade=q.stripe?1:0.94;
+    poly(top,'rgb('+base.map(c=>Math.round(c*shade)).join(',')+')');
+    if(top[0][2]>2){ let r=q.seed>>>0; const wq=Math.hypot(v[1][0]-v[0][0],v[1][1]-v[0][1]);
+      for(let k=0;k<Math.max(3,Math.round(wq/4));k++){ r=(r*1103515245+12345)>>>0; const fu=r/4294967296; r=(r*1103515245+12345)>>>0; const fv=r/4294967296; r=(r*1103515245+12345)>>>0;
+        const px=v[0][0]+(v[1][0]-v[0][0])*fu+(v[3][0]-v[0][0])*fv, py=v[0][1]+(v[1][1]-v[0][1])*fu+(v[3][1]-v[0][1])*fv, pz=v[0][2]+(v[3][2]-v[0][2])*fv;
+        const pt=P(px,py,pz); cx.fillStyle=(r&1)?'rgba(40,42,48,.55)':'rgba(220,224,232,.35)'; cx.fillRect(pt[0],pt[1],Math.max(1,0.7*pt[2]),Math.max(1,0.45*pt[2])); } } }
   // ball (if it is below the surface it was already drawn inside the strip loop, at its depth)
-  const b=st.ball, fl=floorAt(b.x,b.y);
   if(!st.ballDrawn) drawBall();
   drawOverlay();
 }
@@ -325,7 +361,7 @@ function drawOverlay(){ const b=st.ball;
     cx.fillStyle='rgba(120,220,150,.9)'; cx.beginPath(); cx.arc(lx-mx*rad*0.85, ly-my*rad*0.85, 9,0,7); cx.fill(); cx.lineWidth=1; }
   cx.textAlign='left';
   const stale=performance.now()-st.lastHeard>1500;
-  $('hud').textContent=(stale?'⚠ no data from the phone\n':'')+'build     7\n'+TR.name+'\n'+'done      '+st.wins+'\n'+'falls     '+st.falls+'\n'+
+  $('hud').textContent=(stale?'⚠ no data from the phone\n':'')+'build     9\n'+TR.name+'\n'+'done      '+st.wins+'\n'+'falls     '+st.falls+'\n'+
     (TR.kind==='HOP'?'hops      '+st.jumps+'\n':'')+'time      '+st.run.toFixed(1)+' s\n'+'link      '+(path==='direct'?'direct':'relay')+' · '+st.rate.toFixed(0)+'/s';
 }
 
