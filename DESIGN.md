@@ -33,6 +33,12 @@
 - Közben titokban kinyílt egy **könnyű egérút** (kordonos leágazás). Ebben is vannak akadályok, de nem túl nehezek.
 - Az egérút oda vezet, ahová a helyes út vezetett volna. A rossz döntés ára tehát a nehezebb út és az elvesztett életek kockázata, nem az, hogy végleg eltévedsz.
 
+## Elágazás-típusok (összefoglaló)
+1. **Hagyományos elágazás:** mindkét út ugyanoda vezet. A helyes a könnyebb, a rossz nehezebb, nehezített feladatokkal.
+2. **Zsákutca:** lásd lent.
+3. **A rossz döntés útja (lehetetlen véggel):** lásd fent.
+4. Mindháromnál érvényes: előre semmi nem jelzi egyértelműen, melyik a helyes (csali).
+
 ## Zsákutca (eldöntve)
 - Közepesen nehéz akadályok, a végén **semmi**.
 - Visszafelé ugyanazokon az akadályokon kell végigmenni, ezért a zsákutca kétszer kerül.
