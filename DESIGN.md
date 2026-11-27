@@ -1,5 +1,12 @@
 # Rolling Life – tervjegyzet
 
+## Az egész öt mondatban
+1. Egy kézben a telefon mint tálca, a szem a nagy képernyőn; a pályát billented, a golyó gurul.
+2. A pálya egy útvesztő: elágazások, csalik, zsákutcák és lehetetlen részek, ahonnan vissza kell fordulni.
+3. A játék semmit nem árul el előre; a rossz döntés ára később jön, a jó döntés és az időben feladás jutalmat ad (élet, rövid minitérkép).
+4. Szakaszokból áll (10–20 perc, félúton mentés), napi 3 élettel; a golyó anyaga (fa, vas, papír, üveg) és a felület (beton, homok, víz, szél) változtatja a feladatot.
+5. A pályát végül a gép rakja össze a kipróbált, nehézség szerint besorolt akadályokból, így te is először látod.
+
 ## Alapötlet
 - A telefon egy kézben, vízszintesen, mint egy tálca. A szem végig a nagy képernyőn van (laptop vagy tévé).
 - A játékos nem a golyót irányítja, hanem a pályát billenti. A golyó a fizika szerint gurul.
