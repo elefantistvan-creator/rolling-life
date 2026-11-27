@@ -33,6 +33,12 @@
 - Közben titokban kinyílt egy **könnyű egérút** (kordonos leágazás). Ebben is vannak akadályok, de nem túl nehezek.
 - Az egérút oda vezet, ahová a helyes út vezetett volna. A rossz döntés ára tehát a nehezebb út és az elvesztett életek kockázata, nem az, hogy végleg eltévedsz.
 
+## Zsákutca (eldöntve)
+- Közepesen nehéz akadályok, a végén **semmi**.
+- Visszafelé ugyanazokon az akadályokon kell végigmenni, ezért a zsákutca kétszer kerül.
+- Utána a játékos elindulhat a másik, helyes úton.
+- Megjegyzés: visszafelé ugyanaz az akadály más próba (a lejtőből emelkedő lesz, a kanyar a másik irányba fordul). Érdemes aszimmetrikus akadályokat tenni a zsákutcákba, hogy a visszaút ne csak ismétlés legyen.
+
 ## Lezárt leágazások (kordonok)
 - A pálya néhol leágazik, mint egy autópálya-kijárat, de a leágazást egy **kordon** zárja le.
 - Minden kordon egyforma, ránézésre nem derül ki, melyik ér valamit.
